@@ -102,6 +102,8 @@ async function login() {
         expiresAt: Date.now() + 24 * 60 * 60 * 1000,
       },
     });
+    lastError = "";
+    await persist();
     return { ok: true, email: "dev@localhost", dev: true };
   }
 
@@ -152,6 +154,8 @@ async function login() {
     email: profile.email || profile.name || "signed in",
   };
   await chrome.storage.session.set({ auth });
+  lastError = "";
+  await persist();
   return { ok: true, email: auth.email, redirectUri };
 }
 

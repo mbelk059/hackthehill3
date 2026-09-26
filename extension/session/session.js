@@ -13,6 +13,7 @@ const presageEl = document.querySelector("#presage");
 let localError = "";
 let statusNote = "";
 let starting = false;
+let signedIn = false;
 let micStream = null;
 let micSource = null;
 let micNode = null;
@@ -93,9 +94,15 @@ function showError(message) {
 
 function render(state) {
   if (!state) return;
+  signedIn = Boolean(state.loggedIn);
   if (!starting) {
-    statusEl.textContent = statusNote || (state.studying ? "Just talk! Say stop or arrête to cut in." : "Ready when you are!");
-    startButton.textContent = "Let's go!";
+    if (!signedIn) {
+      statusEl.textContent = "Log in here too!";
+      startButton.textContent = "Log in";
+    } else {
+      statusEl.textContent = statusNote || (state.studying ? "Just talk! Say stop or arrête to cut in." : "Ready when you are!");
+      startButton.textContent = "Let's go!";
+    }
   }
   startButton.hidden = state.studying;
   tools.hidden = !state.studying;
@@ -109,7 +116,8 @@ function render(state) {
   const cameraNote = state.studying && detail && !/not connected|offline/i.test(detail);
   presageEl.hidden = !cameraNote;
   presageEl.textContent = cameraNote ? detail : "";
-  showError(localError || state.lastError);
+  const message = localError || state.lastError || "";
+  showError(!signedIn && message === "Log in first." ? "" : message);
 }
 
 async function refresh() {
@@ -169,6 +177,23 @@ async function mediaGranted() {
 }
 
 startButton.addEventListener("click", async () => {
+  if (!signedIn) {
+    localError = "";
+    starting = true;
+    startButton.disabled = true;
+    startButton.textContent = "Opening login…";
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "LOGIN" });
+      if (!result?.ok) localError = result?.error || "Login failed.";
+    } catch (error) {
+      localError = error.message || "Login failed.";
+    } finally {
+      starting = false;
+      startButton.disabled = false;
+      await refresh();
+    }
+    return;
+  }
   localError = "";
   statusNote = "";
   stopTutorAudio();
