@@ -61,6 +61,10 @@ button.text {
   font-weight: 500;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 #mood-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

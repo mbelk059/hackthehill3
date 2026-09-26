@@ -10,9 +10,13 @@ const presageEl = document.querySelector("#presage");
 const redirectEl = document.querySelector("#redirect");
 const loginButton = document.querySelector("#login");
 
+let localError = "";
+
 function showError(message) {
-  errorEl.hidden = !message;
-  errorEl.textContent = message || "";
+  localError = message || "";
+  const text = localError;
+  errorEl.hidden = !text;
+  errorEl.textContent = text;
 }
 
 function render(state) {
@@ -24,12 +28,15 @@ function render(state) {
   redirectEl.textContent = state.auth0Ready
     ? `Auth0 callback: ${state.redirectUri}`
     : "Auth0 is empty in config.js, so this uses the local dev login.";
-  startButton.hidden = state.studying;
+  startButton.hidden = false;
+  startButton.textContent = "Open study window";
   stopButton.hidden = !state.studying;
   moodRow.hidden = !state.studying;
   moodLabel.textContent = state.mood === "strict" ? "Strict" : "Calm";
   presageEl.textContent = state.presage?.detail || "";
-  showError(state.lastError);
+  const message = localError || state.lastError || "";
+  errorEl.hidden = !message;
+  errorEl.textContent = message;
 }
 
 async function refresh() {
@@ -55,16 +62,12 @@ startButton.addEventListener("click", async () => {
   showError("");
   startButton.disabled = true;
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) throw new Error("No active tab.");
-    const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-    const result = await chrome.runtime.sendMessage({ type: "START", streamId, tabId: tab.id });
-    if (!result?.ok) showError(result?.error || "Could not start.");
+    const result = await chrome.runtime.sendMessage({ type: "OPEN_CONTROLS" });
+    if (!result?.ok) showError(result?.error || "Could not open the study window.");
   } catch (error) {
     showError(error.message);
   } finally {
     startButton.disabled = false;
-    await refresh();
   }
 });
 

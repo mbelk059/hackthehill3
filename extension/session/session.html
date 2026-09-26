@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Study Mascot</title>
+    <link rel="stylesheet" href="../popup/popup.css" />
+  </head>
+  <body>
+    <header>
+      <img id="mascot" alt="" src="../assets/mascot/mascot.png" />
+      <div>
+        <h1>Study Mascot</h1>
+        <p id="status">Click Start, then choose Allow.</p>
+      </div>
+    </header>
+    <p id="error" hidden></p>
+    <button id="start" type="button">Start studying</button>
+    <button id="stop" type="button" hidden>Stop</button>
+    <div id="mood-row" hidden>
+      <span id="mood-label">Calm</span>
+      <button id="preview-calm" type="button">Preview calm</button>
+      <button id="preview-strict" type="button">Preview strict</button>
+    </div>
+    <p id="presage" class="hint"></p>
+    <p class="hint">Hold the mascot, ask a question out loud, then let go. It answers in a voice after you release.</p>
+    <script type="module" src="session.js"></script>
+  </body>
+</html>

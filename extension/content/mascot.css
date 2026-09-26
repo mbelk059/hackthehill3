@@ -41,7 +41,8 @@
 }
 
 .hint,
-.bubble {
+.bubble,
+.stop {
   pointer-events: none;
   background: #f6efe2;
   color: #241c16;
@@ -51,6 +52,12 @@
   font-size: 12px;
   line-height: 1.35;
   max-width: 220px;
+}
+
+.stop {
+  pointer-events: auto;
+  cursor: pointer;
+  font: inherit;
 }
 
 .bubble:empty,

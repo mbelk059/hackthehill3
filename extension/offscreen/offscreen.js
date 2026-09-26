@@ -10,7 +10,7 @@ import {
 const SCREEN_INTERVAL_MS = 1000;
 const WEBCAM_INTERVAL_MS = 125;
 const ATTENTION_SAMPLE_MS = 10000;
-const GEMINI_MODEL_FALLBACK = "gemini-live-2.5-flash-preview";
+const GEMINI_MODEL_FALLBACK = "gemini-3.8-live";
 
 const session = {
   running: false,
@@ -65,7 +65,7 @@ function postStatus(error) {
       ready: session.presageReady,
       detail: session.presageReady ? "Presage connected" : "Presage offline — mood preview still works",
     },
-  });
+  }).catch(() => {});
 }
 
 async function authHeaders() {
@@ -127,7 +127,7 @@ function sendGemini(payload) {
 }
 
 function geminiUrl(token) {
-  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?access_token=${encodeURIComponent(token)}`;
+  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
 }
 
 function openGemini(mood) {
@@ -180,14 +180,19 @@ function openGemini(mood) {
     socket.onerror = () => {
       fail(new Error("Gemini socket failed."));
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (session.gemini === socket) session.geminiReady = false;
+      if (!settled) {
+        const reason = event.reason || `Gemini closed (${event.code}).`;
+        fail(new Error(reason));
+      }
     };
     socket.onopen = () => {
       socket.send(JSON.stringify({
         setup: {
           model: `models/${session.geminiModel}`,
-          generationConfig: { responseModalities: ["TEXT"] },
+          generationConfig: { responseModalities: ["AUDIO"] },
+          outputAudioTranscription: {},
           systemInstruction: { parts: [{ text: PROMPTS[mood] || PROMPTS.calm }] },
           realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
         },
@@ -200,12 +205,12 @@ function handleGeminiContent(message) {
   const server = message.serverContent;
   if (!server) return;
   if (session.acceptEpoch !== session.epoch) return;
-  const parts = server.modelTurn?.parts || [];
-  for (const part of parts) {
-    if (!part.text) continue;
-    session.caption += part.text;
+  const spoken = server.outputTranscription?.text
+    || (server.modelTurn?.parts || []).map((part) => part.text || "").join("");
+  if (spoken) {
+    session.caption += spoken;
     chrome.runtime.sendMessage({ type: "CAPTION", text: session.caption });
-    const split = takeSentences(session.textBuffer, part.text, false);
+    const split = takeSentences(session.textBuffer, spoken, false);
     session.textBuffer = split.buffer;
     for (const sentence of split.sentences) speak(sentence);
   }
@@ -235,8 +240,12 @@ async function reconnectGemini() {
   }
 }
 
-function speak(sentence) {
+async function speak(sentence) {
+  if (!session.tts || session.tts.readyState !== WebSocket.OPEN) {
+    await openTts(session.mood);
+  }
   if (!session.tts || session.tts.readyState !== WebSocket.OPEN) return;
+  session.audioCtx?.resume();
   session.tts.send(JSON.stringify({ text: `${sentence} `, flush: true }));
 }
 
@@ -244,6 +253,7 @@ function ttsUrl(voiceId, modelId) {
   const params = new URLSearchParams({
     model_id: modelId || "eleven_flash_v2_5",
     output_format: "pcm_24000",
+    inactivity_timeout: "180",
   });
   return `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?${params}`;
 }
@@ -256,6 +266,17 @@ function openTts(mood) {
   }
   const voiceId = mood === "strict" ? configTts.voiceStrict : configTts.voiceCalm;
   return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      postStatus("ElevenLabs did not connect.");
+      finish();
+    }, 8000);
     const socket = new WebSocket(ttsUrl(voiceId, configTts.modelId));
     session.tts = socket;
     socket.onopen = () => {
@@ -268,15 +289,26 @@ function openTts(mood) {
           similarity_boost: 0.8,
         },
       }));
-      resolve();
+      finish();
     };
     socket.onmessage = (event) => {
       let message;
       try { message = JSON.parse(event.data); } catch { return; }
       if (message.audio) playPcm(message.audio);
-      if (message.error) postStatus(message.error);
+      if (message.error || message.message) {
+        const text = String(message.error || message.message);
+        if (text.includes("input_timeout")) {
+          session.ttsOpen = false;
+          try { socket.close(); } catch { /* already closing */ }
+          return;
+        }
+        if (message.error) postStatus(text);
+      }
     };
-    socket.onerror = () => postStatus("ElevenLabs socket failed.");
+    socket.onerror = () => {
+      postStatus("ElevenLabs socket failed.");
+      finish();
+    };
     socket.onclose = () => {
       if (session.tts === socket) session.ttsOpen = false;
     };
@@ -296,6 +328,7 @@ function ensureAudio() {
 
 function playPcm(base64) {
   ensureAudio();
+  session.audioCtx.resume();
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
@@ -314,6 +347,7 @@ function playPcm(base64) {
   source.onended = () => {
     session.sources = session.sources.filter((item) => item !== source);
   };
+  chrome.runtime.sendMessage({ type: "AUDIO_CHUNK", audio: base64 });
 }
 
 function stopPlayback() {
@@ -417,7 +451,12 @@ async function logAttention(state, score, isTransition) {
 
 async function startScreen(streamId) {
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
+    audio: {
+      mandatory: {
+        chromeMediaSource: "tab",
+        chromeMediaSourceId: streamId,
+      },
+    },
     video: {
       mandatory: {
         chromeMediaSource: "tab",
@@ -487,13 +526,14 @@ async function startWebcam() {
 
 function beginPtt() {
   if (!session.running || session.ptt) return;
+  session.audioCtx?.resume();
   session.ptt = true;
   session.epoch += 1;
   session.acceptEpoch = null;
   session.textBuffer = "";
   session.caption = "";
   stopPlayback();
-  chrome.runtime.sendMessage({ type: "CAPTION", text: "" });
+  chrome.runtime.sendMessage({ type: "CAPTION", text: "Listening…" });
   sendGemini({ realtimeInput: { activityStart: {} } });
 }
 
@@ -517,7 +557,7 @@ async function endPtt() {
 }
 
 async function startSession(message) {
-  if (session.running) return { ok: true };
+  if (session.running) await stopSession();
   session.running = true;
   session.streamId = message.streamId;
   session.tabId = message.tabId;
@@ -525,12 +565,22 @@ async function startSession(message) {
   session.debouncer.reset();
   session.caption = "";
   try {
+    await startScreen(message.streamId);
+  } catch (error) {
+    session.running = false;
+    postStatus(error.message);
+    return { ok: false, error: error.message };
+  }
+  try {
     const tokenResult = await api("/api/gemini/token", {});
     session.token = tokenResult.token;
-    session.geminiModel = tokenResult.model || GEMINI_MODEL_FALLBACK;
+    const retired = tokenResult.model === "gemini-live-2.5-flash-preview";
+    session.geminiModel = retired ? GEMINI_MODEL_FALLBACK : (tokenResult.model || GEMINI_MODEL_FALLBACK);
     await openGemini("calm");
   } catch (error) {
+    session.running = false;
     postStatus(error.message);
+    return { ok: false, error: error.message };
   }
   try {
     session.ttsConfig = await api("/api/tts/config", {});
@@ -538,26 +588,12 @@ async function startSession(message) {
   } catch (error) {
     postStatus(error.message);
   }
-  try {
-    await startScreen(message.streamId);
-  } catch (error) {
-    session.running = false;
-    session.gemini?.close();
-    session.tts?.close();
-    postStatus(error.message);
-    return { ok: false, error: error.message };
-  }
 
-  try {
-    await startMic();
-  } catch (error) {
-    postStatus(`Microphone unavailable: ${error.message}`);
-  }
   try {
     await startWebcam();
     connectPresage();
   } catch (error) {
-    postStatus(`Webcam unavailable: ${error.message}`);
+    postStatus("Camera was blocked, so calm/strict will not switch on its own. Hold the mascot to talk.");
   }
 
   try {
@@ -607,20 +643,28 @@ async function stopSession() {
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  const reply = (promise) => {
+    promise.then(
+      (result) => sendResponse(result ?? { ok: true }),
+      (error) => sendResponse({ ok: false, error: error.message }),
+    );
+    return true;
+  };
   if (message.type === "OFFSCREEN_PING") {
     sendResponse({ pong: true });
     return false;
   }
-  if (message.type === "START_SESSION") {
-    startSession(message).then(sendResponse);
-    return true;
-  }
-  if (message.type === "STOP_SESSION") {
-    stopSession().then(sendResponse);
-    return true;
-  }
+  if (message.type === "START_SESSION") return reply(startSession(message));
+  if (message.type === "STOP_SESSION") return reply(stopSession());
   if (message.type === "PTT_START") beginPtt();
   if (message.type === "PTT_END") endPtt();
+  if (message.type === "MIC_CHUNK" && session.ptt && message.audio) {
+    sendGemini({
+      realtimeInput: {
+        audio: { mimeType: "audio/pcm;rate=16000", data: message.audio },
+      },
+    });
+  }
   if (message.type === "PREVIEW_MOOD") applyMood(message.mood);
   return false;
 });

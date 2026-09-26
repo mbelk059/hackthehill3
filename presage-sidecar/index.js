@@ -25,6 +25,7 @@ const clients = new Set();
 let sdk = null;
 let pixelFormat = null;
 let ready = false;
+let acceptingFrames = false;
 let statusError = "";
 let lastUs = 0;
 
@@ -73,7 +74,11 @@ async function startSdk() {
         ...focus,
       });
     });
+    sdk.on("processingStatus", (status) => {
+      acceptingFrames = status === 3;
+    });
     sdk.on("error", (_code, message) => {
+      acceptingFrames = false;
       statusError = message || "Presage error";
       broadcast(statusMessage());
     });
@@ -89,7 +94,7 @@ async function startSdk() {
 }
 
 function pushFrame(jpegBase64) {
-  if (!sdk || !ready) return;
+  if (!sdk || !ready || !acceptingFrames) return;
   const buffer = Buffer.from(jpegBase64, "base64");
   const decoded = jpeg.decode(buffer, { useTArray: true, maxResolutionInMP: 5 });
   const accepted = sdk.sendFrame(

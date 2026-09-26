@@ -1,7 +1,11 @@
 import { config } from "./config.js";
 
+chrome.sidePanel.setOptions({ path: "session/session.html", enabled: true }).catch(() => {});
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+
 let studying = false;
 let studyTabId = null;
+let invokedTabId = null;
 let mood = "calm";
 let presage = { ready: false, detail: "Not connected" };
 let lastError = "";
@@ -10,20 +14,29 @@ async function hydrate() {
   const stored = await chrome.storage.session.get([
     "studying",
     "studyTabId",
+    "invokedTabId",
     "mood",
     "presage",
     "lastError",
   ]);
   studying = Boolean(stored.studying);
   studyTabId = stored.studyTabId ?? null;
+  if (invokedTabId == null) invokedTabId = stored.invokedTabId ?? null;
   mood = stored.mood || "calm";
   presage = stored.presage || presage;
   lastError = stored.lastError || "";
+  if (/message channel closed|asynchronous response/i.test(lastError)) lastError = "";
 }
 
 function persist() {
-  return chrome.storage.session.set({ studying, studyTabId, mood, presage, lastError });
+  return chrome.storage.session.set({ studying, studyTabId, invokedTabId, mood, presage, lastError });
 }
+
+chrome.action.onClicked.addListener((tab) => {
+  invokedTabId = tab?.id ?? null;
+  if (tab?.id) chrome.sidePanel.open({ tabId: tab.id });
+  persist();
+});
 
 const hydratePromise = hydrate();
 
@@ -158,22 +171,12 @@ async function ensureOffscreen() {
   });
 }
 
-async function sendWhenReady(message) {
-  let lastErrorMessage = "Offscreen document did not respond.";
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      const response = await chrome.runtime.sendMessage(message);
-      if (response) return response;
-    } catch (error) {
-      lastErrorMessage = error.message;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(lastErrorMessage);
-}
-
 async function startStudy(message) {
-  const token = await getAccessToken();
+  let token = await getAccessToken();
+  if (!token && !config.auth0Domain) {
+    await login();
+    token = await getAccessToken();
+  }
   if (!token) throw new Error("Log in first.");
   if (!message.streamId || !message.tabId) throw new Error("Missing tab capture.");
   lastError = "";
@@ -186,24 +189,18 @@ async function startStudy(message) {
       files: ["content/mascot.js"],
     });
   } catch {
-    // The page may already have the content script, or it may not allow scripts.
+    // The page may not allow scripts. The message below still reports that.
   }
-
-  const result = await sendWhenReady({
-    type: "START_SESSION",
-    streamId: message.streamId,
-    tabId: message.tabId,
-  });
-  if (!result?.ok) throw new Error(result?.error || "Could not start the session.");
 
   studying = true;
   studyTabId = message.tabId;
   mood = "calm";
+  lastError = "";
   await persist();
   try {
     await chrome.tabs.sendMessage(message.tabId, { type: "MASCOT", visible: true, mood: "calm" });
   } catch {
-    lastError = "Mascot could not attach to this page. Try a normal website tab.";
+    lastError = "Refresh the website tab, then click Start studying again.";
     await persist();
   }
   return { ok: true };
@@ -211,7 +208,6 @@ async function startStudy(message) {
 
 async function stopStudy() {
   studying = false;
-  const tabId = studyTabId;
   studyTabId = null;
   mood = "calm";
   await persist();
@@ -223,13 +219,14 @@ async function stopStudy() {
     }
     await chrome.offscreen.closeDocument();
   }
-  if (tabId) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map(async (tab) => {
     try {
-      await chrome.tabs.sendMessage(tabId, { type: "MASCOT", visible: false });
+      await chrome.tabs.sendMessage(tab.id, { type: "MASCOT", visible: false });
     } catch {
-      // The tab may already be gone.
+      // This tab has no mascot.
     }
-  }
+  }));
   return { ok: true };
 }
 
@@ -242,6 +239,7 @@ async function snapshot() {
     email: auth?.email || "",
     dev: auth?.accessToken === "dev",
     studying,
+    invokedTabId,
     mood,
     presage,
     lastError,
@@ -260,6 +258,9 @@ async function relayToTab(message) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "START_SESSION" || message.type === "STOP_SESSION" || message.type === "PTT_START" || message.type === "PTT_END" || message.type === "MIC_CHUNK" || message.type === "PREVIEW_MOOD" || message.type === "OFFSCREEN_PING") {
+    return false;
+  }
   handle(message, sender)
     .then((result) => sendResponse(result ?? { ok: true }))
     .catch((error) => sendResponse({ ok: false, error: error.message }));
@@ -276,7 +277,15 @@ async function handle(message, sender) {
   }
   if (message.type === "LOGIN") return login();
   if (message.type === "LOGOUT") return logout();
-  if (message.type === "START") return startStudy(message);
+  if (message.type === "START") {
+    try {
+      return await startStudy(message);
+    } catch (error) {
+      lastError = error.message;
+      await persist();
+      throw error;
+    }
+  }
   if (message.type === "STOP") return stopStudy();
   if (message.type === "MASCOT_HELLO") {
     const visible = studying && sender.tab?.id === studyTabId;
@@ -290,11 +299,14 @@ async function handle(message, sender) {
   }
   if (message.type === "STATUS") {
     if (message.presage) presage = message.presage;
-    if (typeof message.error === "string") lastError = message.error;
+    if (typeof message.error === "string") {
+      lastError = message.error;
+      if (message.error) relayToTab({ type: "CAPTION", text: message.error });
+    }
     await persist();
     return { ok: true };
   }
-  if (message.type === "AMPLITUDE" || message.type === "CAPTION" || message.type === "MASCOT") {
+  if (message.type === "AMPLITUDE" || message.type === "CAPTION" || message.type === "MASCOT" || message.type === "AUDIO_CHUNK") {
     await relayToTab(message);
     return { ok: true };
   }

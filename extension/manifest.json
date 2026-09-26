@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "A screen-share study tutor with a pixel mascot.",
   "minimum_chrome_version": "116",
-  "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "identity", "scripting"],
+  "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "identity", "scripting", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
@@ -12,8 +12,10 @@
   },
   "action": {
     "default_title": "Study Mascot",
-    "default_popup": "popup/popup.html",
     "default_icon": "assets/mascot/mascot.png"
+  },
+  "side_panel": {
+    "default_path": "session/session.html"
   },
   "icons": {
     "128": "assets/mascot/mascot.png"

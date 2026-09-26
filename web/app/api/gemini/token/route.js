@@ -14,7 +14,7 @@ export async function POST(request) {
     return json({ error: "Set GEMINI_API_KEY in web/.env.local" }, 503);
   }
 
-  const model = process.env.GEMINI_LIVE_MODEL || "gemini-live-2.5-flash-preview";
+  const model = process.env.GEMINI_LIVE_MODEL || "gemini-3.8-live";
   try {
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
