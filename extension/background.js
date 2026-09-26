@@ -198,10 +198,9 @@ async function startStudy(message) {
   lastError = "";
   await persist();
   try {
-    await chrome.tabs.sendMessage(message.tabId, { type: "MASCOT", visible: true, mood: "calm" });
+    await chrome.tabs.sendMessage(message.tabId, { type: "MASCOT", visible: false });
   } catch {
-    lastError = "Refresh the website tab, then click Start studying again.";
-    await persist();
+    // The page mascot stays off. The character lives in the side panel.
   }
   return { ok: true };
 }
@@ -288,8 +287,7 @@ async function handle(message, sender) {
   }
   if (message.type === "STOP") return stopStudy();
   if (message.type === "MASCOT_HELLO") {
-    const visible = studying && sender.tab?.id === studyTabId;
-    return { visible, mood };
+    return { visible: false, mood };
   }
   if (message.type === "MOOD") {
     mood = message.mood;
@@ -319,6 +317,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (tabId === studyTabId && info.status === "complete") {
-    relayToTab({ type: "MASCOT", visible: true, mood });
+    relayToTab({ type: "MASCOT", visible: false });
   }
 });

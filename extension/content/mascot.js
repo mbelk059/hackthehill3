@@ -141,7 +141,6 @@ if (window.top === window) {
       sprite.classList.toggle("strict", message.mood === "strict");
     }
     if (message.type === "AMPLITUDE") setTalking(Boolean(message.talking), message.value);
-    if (message.type === "AUDIO_CHUNK" && message.audio) playChunk(message.audio);
     if (message.type === "CAPTION" && bubble) {
       bubble.textContent = message.text || "";
       bubble.hidden = !message.text;

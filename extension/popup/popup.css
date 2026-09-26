@@ -5,7 +5,8 @@
 }
 
 body {
-  width: 300px;
+  width: auto;
+  min-width: 260px;
   margin: 0;
   padding: 16px;
 }
@@ -17,10 +18,34 @@ header {
   margin-bottom: 12px;
 }
 
-img {
+header img {
   width: 72px;
-  height: auto;
+}
+
+#mascot {
+  width: 144px;
+  display: block;
+  margin: 12px auto 4px;
+  cursor: pointer;
   image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#mascot.listening {
+  transform: translateY(-6px);
+}
+
+#mascot.strict {
+  filter:
+    drop-shadow(3px 0 0 #e23d3d)
+    drop-shadow(-3px 0 0 #e23d3d)
+    drop-shadow(0 3px 0 #e23d3d)
+    drop-shadow(0 -3px 0 #e23d3d);
+}
+
+#caption {
+  text-align: center;
 }
 
 h1 {

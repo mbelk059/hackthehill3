@@ -201,7 +201,58 @@ stopButton.addEventListener("click", async () => {
   await refresh();
 });
 
+let voiceTime = 0;
+
+function playTutor(base64) {
+  if (!audioCtx) audioCtx = new AudioContext();
+  audioCtx.resume();
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const view = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+  const floats = new Float32Array(view.length);
+  for (let i = 0; i < view.length; i += 1) floats[i] = view[i] / 32768;
+  if (!floats.length) return;
+  const buffer = audioCtx.createBuffer(1, floats.length, 24000);
+  buffer.copyToChannel(floats, 0);
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  const start = Math.max(audioCtx.currentTime + 0.05, voiceTime);
+  source.start(start);
+  voiceTime = start + buffer.duration;
+}
+
+const mascotEl = document.querySelector("#mascot");
+const captionEl = document.querySelector("#caption");
+
+mascotEl.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  if (!audioCtx) audioCtx = new AudioContext();
+  audioCtx.resume();
+  talking = Boolean(micStream);
+  mascotEl.classList.add("listening");
+  mascotEl.setPointerCapture(event.pointerId);
+  chrome.runtime.sendMessage({ type: "PTT_START" });
+});
+
+function releaseMascot() {
+  if (!mascotEl.classList.contains("listening")) return;
+  mascotEl.classList.remove("listening");
+  talking = false;
+  chrome.runtime.sendMessage({ type: "PTT_END" });
+}
+
+mascotEl.addEventListener("pointerup", releaseMascot);
+mascotEl.addEventListener("pointercancel", releaseMascot);
+
 chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "AUDIO_CHUNK" && message.audio) playTutor(message.audio);
+  if (message.type === "CAPTION") {
+    captionEl.hidden = !message.text;
+    captionEl.textContent = message.text || "";
+  }
+  if (message.type === "MOOD") mascotEl.classList.toggle("strict", message.mood === "strict");
   if (message.type === "PTT_START") {
     talking = Boolean(micStream);
     audioCtx?.resume();

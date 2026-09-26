@@ -215,14 +215,19 @@ function handleGeminiContent(message) {
     for (const sentence of split.sentences) speak(sentence);
   }
   if (server.turnComplete) {
-    const split = takeSentences(session.textBuffer, "", true);
-    session.textBuffer = split.buffer;
-    for (const sentence of split.sentences) speak(sentence);
-    session.acceptEpoch = null;
-    if (session.moodDirty) {
-      session.moodDirty = false;
-      reconnectGemini();
-    }
+    const epoch = session.acceptEpoch;
+    clearTimeout(session.flushTimer);
+    session.flushTimer = setTimeout(() => {
+      if (session.acceptEpoch !== epoch) return;
+      const split = takeSentences(session.textBuffer, "", true);
+      session.textBuffer = split.buffer;
+      for (const sentence of split.sentences) speak(sentence);
+      session.acceptEpoch = null;
+      if (session.moodDirty) {
+        session.moodDirty = false;
+        reconnectGemini();
+      }
+    }, 900);
   }
 }
 
@@ -240,13 +245,41 @@ async function reconnectGemini() {
   }
 }
 
-async function speak(sentence) {
-  if (!session.tts || session.tts.readyState !== WebSocket.OPEN) {
-    await openTts(session.mood);
+let speakQueue = Promise.resolve();
+
+function speak(sentence) {
+  const text = sentence.trim();
+  if (!text) return;
+  speakQueue = speakQueue.then(() => speakNow(text)).catch((error) => postStatus(error.message));
+}
+
+async function speakNow(sentence) {
+  const configTts = session.ttsConfig;
+  if (!configTts?.apiKey) {
+    postStatus("Set ELEVENLABS_API_KEY in web/.env.local so the mascot can talk.");
+    return;
   }
-  if (!session.tts || session.tts.readyState !== WebSocket.OPEN) return;
-  session.audioCtx?.resume();
-  session.tts.send(JSON.stringify({ text: `${sentence} `, flush: true }));
+  const voiceId = session.mood === "strict" ? configTts.voiceStrict : configTts.voiceCalm;
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
+    method: "POST",
+    headers: {
+      "xi-api-key": configTts.apiKey,
+      "Content-Type": "application/json",
+      Accept: "audio/pcm",
+    },
+    body: JSON.stringify({
+      text: sentence,
+      model_id: configTts.modelId || "eleven_flash_v2_5",
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    postStatus(detail.slice(0, 180) || "ElevenLabs could not speak.");
+    return;
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!bytes.byteLength) return;
+  playPcm(bytesToBase64(bytes));
 }
 
 function ttsUrl(voiceId, modelId) {
@@ -320,7 +353,10 @@ function ensureAudio() {
   const audioCtx = new AudioContext({ sampleRate: 48000 });
   const analyser = audioCtx.createAnalyser();
   analyser.fftSize = 512;
-  analyser.connect(audioCtx.destination);
+  const silent = audioCtx.createGain();
+  silent.gain.value = 0;
+  analyser.connect(silent);
+  silent.connect(audioCtx.destination);
   session.audioCtx = audioCtx;
   session.analyser = analyser;
   session.amplitudeTimer = setInterval(publishAmplitude, 80);
@@ -374,10 +410,7 @@ function publishAmplitude() {
     value: talking ? Math.max(rms, 0.08) : 0,
     talking,
   });
-  if (!talking && session.voiceDirty) {
-    session.voiceDirty = false;
-    openTts(session.mood);
-  }
+  if (!talking && session.voiceDirty) session.voiceDirty = false;
 }
 
 function isTalking() {
@@ -393,7 +426,6 @@ async function applyMood(next) {
   session.mood = next;
   chrome.runtime.sendMessage({ type: "MOOD", mood: next });
   if (isTalking()) session.voiceDirty = true;
-  else await openTts(next);
   if (!session.token) return;
   if (session.ptt || session.acceptEpoch != null) session.moodDirty = true;
   else await reconnectGemini();
@@ -584,7 +616,6 @@ async function startSession(message) {
   }
   try {
     session.ttsConfig = await api("/api/tts/config", {});
-    await openTts("calm");
   } catch (error) {
     postStatus(error.message);
   }
@@ -621,6 +652,7 @@ async function stopSession() {
   clearInterval(session.sampleTimer);
   clearInterval(session.amplitudeTimer);
   clearTimeout(session.presageTimer);
+  clearTimeout(session.flushTimer);
   stopPlayback();
   session.gemini?.close();
   session.tts?.close();
