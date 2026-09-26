@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Study Mascot</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img id="mascot" alt="" src="../assets/mascot/mascot.png" />
+      <div>
+        <h1>Study Mascot</h1>
+        <p id="status">Checking login…</p>
+      </div>
+    </header>
+    <p id="error" hidden></p>
+    <div id="logged-out">
+      <button id="login" type="button">Log in</button>
+      <p id="redirect" class="hint"></p>
+    </div>
+    <div id="logged-in" hidden>
+      <button id="start" type="button">Start studying</button>
+      <button id="stop" type="button" hidden>Stop</button>
+      <div id="mood-row" hidden>
+        <span id="mood-label">Calm</span>
+        <button id="preview-calm" type="button">Preview calm</button>
+        <button id="preview-strict" type="button">Preview strict</button>
+      </div>
+      <p id="presage" class="hint"></p>
+      <button id="logout" type="button" class="text">Log out</button>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

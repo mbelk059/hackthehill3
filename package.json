@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix web run dev",
+    "sidecar": "npm --prefix presage-sidecar start",
+    "rehearse": "npm --prefix web run rehearse",
+    "test": "node --test extension/lib/session-logic.test.mjs presage-sidecar/focus.test.mjs"
+  }
+}

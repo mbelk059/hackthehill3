@@ -1,0 +1,80 @@
+:root {
+  color: #241c16;
+  background: #f6efe2;
+  font-family: "Segoe UI", sans-serif;
+}
+
+body {
+  width: 300px;
+  margin: 0;
+  padding: 16px;
+}
+
+header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+img {
+  width: 72px;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+#status,
+.hint,
+#error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#error {
+  color: #9d2b2b;
+  background: #f8d7d2;
+  padding: 8px;
+}
+
+button {
+  width: 100%;
+  margin-top: 8px;
+  border: 2px solid #241c16;
+  background: #f4b8c8;
+  color: #241c16;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 650;
+  box-shadow: 3px 3px 0 #241c16;
+  cursor: pointer;
+}
+
+button.text {
+  background: transparent;
+  box-shadow: none;
+  font-weight: 500;
+}
+
+#mood-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#mood-label {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#mood-row button {
+  margin-top: 0;
+  font-size: 12px;
+}
