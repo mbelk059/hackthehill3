@@ -4,42 +4,78 @@
   font-family: "Segoe UI", sans-serif;
 }
 
+html {
+  height: 100%;
+}
+
 body {
+  box-sizing: border-box;
   width: auto;
   min-width: 260px;
+  min-height: 100%;
   margin: 0;
-  padding: 16px;
+  padding: 22px 20px 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: left;
+}
+
+body > * {
+  width: min(100%, 280px);
 }
 
 header {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 12px;
+  justify-content: flex-start;
+  margin: 0;
 }
 
 header img {
   width: 72px;
 }
 
+h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+#status {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #5c5148;
+}
+
 #mascot {
   width: 128px;
   height: 128px;
   display: block;
-  margin: 8px auto 0;
+  margin: 28px 0 0;
   image-rendering: pixelated;
   user-select: none;
   -webkit-user-drag: none;
 }
 
 .bubble {
-  margin: 10px 0 0;
+  margin: 16px 0 0;
   padding: 10px 12px;
   background: #fffaf3;
   border: 2px solid #241c16;
   border-radius: 16px 16px 16px 4px;
   font-size: 13px;
   line-height: 1.4;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+#mascot.nice {
+  filter:
+    drop-shadow(3px 0 0 #7eb6d6)
+    drop-shadow(-3px 0 0 #7eb6d6)
+    drop-shadow(0 3px 0 #7eb6d6)
+    drop-shadow(0 -3px 0 #7eb6d6);
 }
 
 #mascot.strict {
@@ -51,7 +87,7 @@ header img {
 }
 
 #tools {
-  margin-top: 12px;
+  margin-top: 18px;
 }
 
 .modes {
@@ -63,6 +99,8 @@ header img {
   flex: 1;
   width: auto;
   margin-top: 0;
+  padding: 8px 4px;
+  font-size: 12px;
   background: #fffaf3;
 }
 
@@ -71,8 +109,9 @@ header img {
 }
 
 .quiet {
+  display: inline-block;
   width: auto;
-  margin: 8px 12px 0 0;
+  margin: 14px 14px 0 0;
   padding: 0;
   border: none;
   background: transparent;
@@ -81,17 +120,16 @@ header img {
   font-weight: 650;
 }
 
-h1 {
-  margin: 0;
-  font-size: 16px;
-}
-
-#status,
 .hint,
 #error {
   margin: 4px 0 0;
   font-size: 12px;
   line-height: 1.4;
+}
+
+#presage {
+  margin-top: 18px;
+  color: #5c5148;
 }
 
 #error {
@@ -102,11 +140,11 @@ h1 {
 
 button {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 22px;
   border: 2px solid #241c16;
   background: #f4b8c8;
   color: #241c16;
-  padding: 8px 10px;
+  padding: 10px 12px;
   font: inherit;
   font-weight: 650;
   box-shadow: 3px 3px 0 #241c16;

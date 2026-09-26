@@ -131,7 +131,7 @@ export async function logAttention({ userSub, sessionId, state, score, time, isT
 }
 
 export async function logQuestion({ userSub, sessionId, mode, time }) {
-  if (mode !== "calm" && mode !== "strict") throw new Error("Unknown tutor mode.");
+  if (mode !== "calm" && mode !== "strict" && mode !== "nice") throw new Error("Unknown tutor mode.");
   await assertSession(userSub, sessionId);
   const at = parseTime(time);
   const db = getPool();

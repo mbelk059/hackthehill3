@@ -8,6 +8,7 @@ const stopButton = document.querySelector("#stop");
 const tools = document.querySelector("#tools");
 const calmButton = document.querySelector("#mode-calm");
 const strictButton = document.querySelector("#mode-strict");
+const niceButton = document.querySelector("#mode-nice");
 const presageEl = document.querySelector("#presage");
 let localError = "";
 let statusNote = "";
@@ -98,11 +99,16 @@ function render(state) {
   }
   startButton.hidden = state.studying;
   tools.hidden = !state.studying;
-  const strict = state.mood === "strict";
-  calmButton.classList.toggle("on", !strict);
-  strictButton.classList.toggle("on", strict);
-  mascotEl?.classList.toggle("strict", strict);
-  presageEl.textContent = state.presage?.detail || "";
+  const mood = state.mood === "strict" ? "strict" : state.mood === "nice" ? "nice" : "calm";
+  calmButton.classList.toggle("on", mood === "calm");
+  strictButton.classList.toggle("on", mood === "strict");
+  niceButton.classList.toggle("on", mood === "nice");
+  mascotEl?.classList.toggle("strict", mood === "strict");
+  mascotEl?.classList.toggle("nice", mood === "nice");
+  const detail = state.presage?.detail || "";
+  const cameraNote = state.studying && detail && !/not connected|offline/i.test(detail);
+  presageEl.hidden = !cameraNote;
+  presageEl.textContent = cameraNote ? detail : "";
   showError(localError || state.lastError);
 }
 
@@ -400,13 +406,16 @@ function interruptBuddy() {
 
 function chooseMode(mood) {
   chrome.runtime.sendMessage({ type: "PREVIEW_MOOD", mood });
-  mascotEl.classList.toggle("strict", mood === "strict");
-  calmButton.classList.toggle("on", mood !== "strict");
+  calmButton.classList.toggle("on", mood === "calm");
   strictButton.classList.toggle("on", mood === "strict");
+  niceButton.classList.toggle("on", mood === "nice");
+  mascotEl.classList.toggle("strict", mood === "strict");
+  mascotEl.classList.toggle("nice", mood === "nice");
 }
 
 calmButton.addEventListener("click", () => chooseMode("calm"));
 strictButton.addEventListener("click", () => chooseMode("strict"));
+niceButton.addEventListener("click", () => chooseMode("nice"));
 
 document.querySelector("#dashboard").addEventListener("click", () => {
   chrome.tabs.create({ url: `${config.apiBase}/dashboard` });
@@ -418,7 +427,10 @@ chrome.runtime.onMessage.addListener((message) => {
     captionEl.hidden = !message.text;
     captionEl.textContent = message.text || "";
   }
-  if (message.type === "MOOD") mascotEl.classList.toggle("strict", message.mood === "strict");
+  if (message.type === "MOOD") {
+    mascotEl.classList.toggle("strict", message.mood === "strict");
+    mascotEl.classList.toggle("nice", message.mood === "nice");
+  }
   if (message.type === "AMPLITUDE") setMouth(Boolean(message.talking));
 });
 

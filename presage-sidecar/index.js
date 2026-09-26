@@ -29,6 +29,7 @@ let acceptingFrames = false;
 let statusError = "";
 let lastUs = 0;
 let lastCode = "";
+let lastStressed = null;
 let frameTransform = 0;
 let restarting = false;
 
@@ -66,7 +67,24 @@ async function startSdk() {
     pixelFormat = presage.PixelFormat;
     sdk = new presage.SmartSpectraSDK({
       apiKey: process.env.PRESAGE_API_KEY,
-      requestedMetrics: [...presage.faceMetrics],
+      requestedMetrics: [...presage.faceMetrics, 17],
+    });
+    sdk.on("metrics", (buf) => {
+      let metrics;
+      try {
+        metrics = presage.decodeMetrics(buf);
+      } catch {
+        return;
+      }
+      const rows = metrics?.cardio?.hrv || [];
+      const latest = rows[rows.length - 1];
+      if (!latest || latest.baevsky == null) return;
+      if (latest.confidence != null && latest.confidence < 50) return;
+      const stressed = latest.baevsky >= 150;
+      if (stressed === lastStressed) return;
+      lastStressed = stressed;
+      console.log("Presage stress", latest.baevsky, stressed ? "stressed" : "steady");
+      broadcast({ type: "stress", baevsky: latest.baevsky, stressed });
     });
     sdk.on("validationStatus", (code, _timestamp, hint) => {
       const focus = interpretValidation(code);

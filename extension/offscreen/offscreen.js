@@ -60,6 +60,7 @@ const session = {
   debouncer: createMoodDebouncer({ toStrictMs: 1500, toCalmMs: 2000 }),
   voiceHold: null,
   userHeard: "",
+  stressed: false,
 };
 
 function postPresage(detail, ready = true) {
@@ -247,7 +248,10 @@ function handleGeminiContent(message) {
       logQuestion();
     }
     session.caption += spoken;
-    chrome.runtime.sendMessage({ type: "CAPTION", text: session.caption });
+    if (session.caption === spoken) {
+      shownCaption = "";
+      chrome.runtime.sendMessage({ type: "CAPTION", text: "" });
+    }
     const split = takeSentences(session.textBuffer, spoken, false);
     session.textBuffer = split.buffer;
     for (const sentence of split.sentences) speak(sentence);
@@ -266,7 +270,7 @@ function handleGeminiContent(message) {
         session.moodDirty = false;
         reconnectGemini();
       }
-    }, 900);
+    }, 200);
   }
 }
 
@@ -285,6 +289,14 @@ async function reconnectGemini() {
 }
 
 let speakQueue = Promise.resolve();
+let shownCaption = "";
+
+function showSpoken(sentence) {
+  const piece = sentence.trim();
+  if (!piece) return;
+  shownCaption = shownCaption ? `${shownCaption} ${piece}` : piece;
+  chrome.runtime.sendMessage({ type: "CAPTION", text: shownCaption });
+}
 
 function speak(sentence) {
   const text = sentence.trim();
@@ -303,32 +315,70 @@ async function speakNow(sentence, epoch) {
     return;
   }
   const voiceId = configTts.voiceCalm;
-  const strict = session.mood === "strict";
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
-    method: "POST",
-    headers: {
-      "xi-api-key": configTts.apiKey,
-      "Content-Type": "application/json",
-      Accept: "audio/pcm",
-    },
-    body: JSON.stringify({
-      text: sentence,
-      model_id: configTts.modelId || "eleven_flash_v2_5",
-      voice_settings: {
-        stability: strict ? 0.82 : 0.45,
-        similarity_boost: 0.8,
-        speed: strict ? 1.12 : 1,
+  const pace = session.mood === "strict"
+    ? { stability: 0.82, speed: 1.12 }
+    : session.mood === "nice"
+      ? { stability: 0.32, speed: 0.92 }
+      : { stability: 0.45, speed: 1 };
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=pcm_24000&optimize_streaming_latency=3`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": configTts.apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/pcm",
       },
-    }),
-  });
+      body: JSON.stringify({
+        text: sentence,
+        model_id: configTts.modelId || "eleven_flash_v2_5",
+        voice_settings: {
+          stability: pace.stability,
+          similarity_boost: 0.8,
+          speed: pace.speed,
+        },
+      }),
+    },
+  );
   if (!response.ok) {
     const detail = await response.text();
     postStatus(detail.slice(0, 180) || "ElevenLabs could not speak.");
     return;
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (!session.running || epoch !== session.speakEpoch || !bytes.byteLength) return;
-  playPcm(bytesToBase64(bytes));
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!session.running || epoch !== session.speakEpoch || !bytes.byteLength) return;
+    showSpoken(sentence);
+    playPcm(bytesToBase64(bytes));
+    return;
+  }
+  let pending = new Uint8Array(0);
+  let started = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (!session.running || epoch !== session.speakEpoch) {
+      try { await reader.cancel(); } catch { /* already closed */ }
+      return;
+    }
+    if (value?.byteLength) {
+      const merged = new Uint8Array(pending.length + value.length);
+      merged.set(pending, 0);
+      merged.set(value, pending.length);
+      const even = merged.length - (merged.length % 2);
+      if (even > 0) {
+        pending = merged.subarray(even);
+        if (!started) {
+          started = true;
+          showSpoken(sentence);
+        }
+        playPcm(bytesToBase64(merged.subarray(0, even)));
+      } else {
+        pending = merged;
+      }
+    }
+    if (done) break;
+  }
 }
 
 function ttsUrl(voiceId, modelId) {
@@ -441,6 +491,7 @@ function interruptTutor() {
   session.turnOpen = false;
   session.textBuffer = "";
   session.caption = "";
+  shownCaption = "";
   clearTimeout(session.flushTimer);
   stopPlayback();
   chrome.runtime.sendMessage({ type: "CAPTION", text: "" });
@@ -480,8 +531,9 @@ function isTalking() {
 
 function requestedMode(text) {
   const said = text.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
-  if (/\b(lock in|accountab|strict mode|be strict|hold me accountable|keep me honest|sois strict)\b/.test(said)) return "strict";
-  if (/\b(nicer|more nice|be nice|regular mode|be patient|be gentle|be kinder|calm down|go easy|plus gentil|sois plus doux|sois plus douce)\b/.test(said)) return "calm";
+  if (/\b(lock in|accountab|strict bunny|strict mode|be strict|hold me accountable|keep me honest|sois strict)\b/.test(said)) return "strict";
+  if (/\b(nice bunny|nicer|more nice|be gentle|reassure|slow down|plus gentil|sois plus doux|sois plus douce)\b/.test(said)) return "nice";
+  if (/\b(bunny buddy|regular mode|normal mode|be regular)\b/.test(said)) return "calm";
   return null;
 }
 
@@ -496,24 +548,27 @@ function noteUserSpeech(text) {
 }
 
 async function applyMood(next, options = {}) {
-  if (next !== "calm" && next !== "strict") return;
+  if (next !== "calm" && next !== "strict" && next !== "nice") return;
   if (next === session.mood && !session.voiceDirty && !options.defer) {
     chrome.runtime.sendMessage({ type: "MOOD", mood: next });
     return;
   }
-  const enteredStrict = options.announce && next === "strict" && next !== session.mood;
+  const changing = next !== session.mood;
   session.mood = next;
   chrome.runtime.sendMessage({ type: "MOOD", mood: next });
-  if (enteredStrict) {
+  if (options.announce && changing) {
     stopPlayback();
     session.turnOpen = false;
     session.textBuffer = "";
+    session.caption = "";
+    shownCaption = "";
     clearTimeout(session.flushTimer);
-    speak("Hey. Eyes on the page.");
+    chrome.runtime.sendMessage({ type: "CAPTION", text: "" });
+    speak(next === "nice" ? "Hey. Let's slow down." : "Hey. Eyes on the page.");
   }
   if (isTalking()) session.voiceDirty = true;
   if (!session.token) return;
-  if (options.defer || (!enteredStrict && (session.turnOpen || isTalking()))) session.moodDirty = true;
+  if (options.defer || (!options.announce && (session.turnOpen || isTalking()))) session.moodDirty = true;
   else await reconnectGemini();
 }
 
@@ -526,10 +581,26 @@ function onFocusSample(sample) {
   const result = session.debouncer.push(sample.state, Date.now());
   if (result.changed) {
     if (session.voiceHold === "strict" && result.mood === "calm") return;
+    if (session.voiceHold === "nice" && result.mood === "calm") return;
     if (result.mood === "strict") session.voiceHold = null;
-    applyMood(result.mood, { announce: result.mood === "strict" });
+    if (result.mood === "calm" && session.stressed && session.voiceHold !== "strict") {
+      applyMood("nice", { announce: true });
+    } else {
+      applyMood(result.mood, { announce: result.mood === "strict" });
+    }
     logAttention(sample.state, sample.score, true);
   }
+}
+
+function onStressSample(sample) {
+  session.stressed = Boolean(sample.stressed);
+  postPresage(session.stressed ? "You seem stressed" : "Watching you");
+  if (session.stressed) {
+    if (session.mood === "strict" || session.voiceHold === "strict" || session.mood === "nice") return;
+    applyMood("nice", { announce: true });
+    return;
+  }
+  if (session.mood === "nice" && session.voiceHold !== "nice") applyMood("calm");
 }
 
 function connectPresage() {
@@ -545,6 +616,7 @@ function connectPresage() {
       postStatus(message.ready ? "" : message.error || "");
     }
     if (message.type === "focus") onFocusSample(message);
+    if (message.type === "stress") onStressSample(message);
   };
   socket.onclose = () => {
     if (!session.running || session.presageWs !== socket) return;
