@@ -18,10 +18,19 @@ const CODE_NAMES = {
 export function interpretValidation(code) {
   const name = CODE_NAMES[code] || `code_${code}`;
   if (FOCUSED.has(code)) {
-    return { score: code === 0 ? 1 : 0.72, state: "focused", code: name };
+    return { score: code === 0 ? 1 : 0.72, state: "focused", code: name, label: code === 0 ? "Watching you" : "Face in frame" };
   }
   if (DISTRACTED.has(code)) {
-    return { score: 0.12, state: "distracted", code: name };
+    const labels = {
+      kNoFaceFound: "No face in the camera",
+      kMultipleFacesFound: "More than one face",
+      kFaceNotCentered: "Move into the camera",
+      kExcessiveMotion: "Hold still a moment",
+      kFaceTooHigh: "Move down a little",
+      kFaceTooLow: "Move up a little",
+      kFaceNotForward: "Looking away",
+    };
+    return { score: 0.12, state: "distracted", code: name, label: labels[name] || "Looking away" };
   }
-  return { score: null, state: null, code: name };
+  return { score: null, state: null, code: name, label: "" };
 }

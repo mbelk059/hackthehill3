@@ -24,6 +24,7 @@ header img {
 
 #mascot {
   width: 128px;
+  height: 128px;
   display: block;
   margin: 8px auto 0;
   image-rendering: pixelated;

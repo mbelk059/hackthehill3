@@ -57,8 +57,17 @@ const session = {
   presageWs: null,
   nextTime: 0,
   sources: [],
-  debouncer: createMoodDebouncer(),
+  debouncer: createMoodDebouncer({ toStrictMs: 4000, toCalmMs: 3000 }),
 };
+
+function postPresage(detail, ready = true) {
+  session.presageReady = ready;
+  session.presageDetail = detail;
+  chrome.runtime.sendMessage({
+    type: "STATUS",
+    presage: { ready, detail },
+  }).catch(() => {});
+}
 
 function postStatus(error) {
   chrome.runtime.sendMessage({
@@ -66,7 +75,7 @@ function postStatus(error) {
     error: error || "",
     presage: {
       ready: session.presageReady,
-      detail: session.presageReady ? "Presage connected" : "Presage offline — mood preview still works",
+      detail: session.presageDetail || (session.presageReady ? "Presage connected" : "Presage offline — mood preview still works"),
     },
   }).catch(() => {});
 }
@@ -476,6 +485,7 @@ function onFocusSample(sample) {
   session.presageReady = true;
   session.lastFocusState = sample.state;
   session.lastScore = sample.score;
+  if (sample.label) postPresage(sample.label);
   const result = session.debouncer.push(sample.state, Date.now());
   if (result.changed) {
     applyMood(result.mood);

@@ -61,7 +61,7 @@ if (window.top === window) {
     sprite = document.createElement("img");
     sprite.className = "sprite idle";
     sprite.alt = "Study mascot. Hold to talk.";
-    sprite.src = chrome.runtime.getURL("assets/mascot/mascot.png");
+    sprite.src = chrome.runtime.getURL("assets/mascot/idle.png");
     hint = document.createElement("div");
     hint.className = "hint";
     hint.textContent = "Hold me or ` to talk";
@@ -120,16 +120,25 @@ if (window.top === window) {
     }
   }
 
-  function setTalking(next, amplitude) {
+  let mouthTimer = null;
+  let mouthOpen = false;
+
+  function setTalking(next) {
     if (!sprite) return;
     talking = next;
-    sprite.classList.toggle("idle", !next);
     if (next) {
-      const amount = Math.min(1, amplitude || 0);
-      sprite.style.transform = `translateY(${-4 - amount * 8}px) scale(${1 + amount * 0.06}, ${1 - amount * 0.14})`;
-    } else {
-      sprite.style.transform = "";
+      if (mouthTimer) return;
+      mouthTimer = setInterval(() => {
+        mouthOpen = !mouthOpen;
+        sprite.src = chrome.runtime.getURL(mouthOpen ? "assets/mascot/talk.png" : "assets/mascot/idle.png");
+      }, 140);
+      return;
     }
+    clearInterval(mouthTimer);
+    mouthTimer = null;
+    mouthOpen = false;
+    sprite.src = chrome.runtime.getURL("assets/mascot/idle.png");
+    sprite.style.transform = "";
   }
 
   function onMessage(message) {

@@ -28,6 +28,7 @@ let ready = false;
 let acceptingFrames = false;
 let statusError = "";
 let lastUs = 0;
+let lastCode = "";
 
 function timestampUs() {
   let us = Number(process.hrtime.bigint() / 1000n);
@@ -67,6 +68,10 @@ async function startSdk() {
     });
     sdk.on("validationStatus", (code, _timestamp, hint) => {
       const focus = interpretValidation(code);
+      if (focus.code !== lastCode) {
+        lastCode = focus.code;
+        console.log(`Presage ${focus.code} ${focus.state || ""} ${focus.label || hint || ""}`.trim());
+      }
       broadcast({
         type: "focus",
         source: "presage",
@@ -75,15 +80,20 @@ async function startSdk() {
       });
     });
     sdk.on("processingStatus", (status) => {
-      acceptingFrames = status === 3;
+      console.log("Presage processing status", status);
+      if (status === 3) acceptingFrames = true;
+      if (status === 4 || status === 5) acceptingFrames = false;
     });
     sdk.on("error", (_code, message) => {
       acceptingFrames = false;
       statusError = message || "Presage error";
+      console.error("Presage error", statusError);
       broadcast(statusMessage());
     });
     sdk.useCustomInput(presage.FrameTransform.kNone);
     sdk.start();
+    acceptingFrames = sdk.processingStatus !== 4 && sdk.processingStatus !== 5;
+    console.log("Presage status after start", sdk.processingStatus, "accepting", acceptingFrames);
     ready = true;
     statusError = "";
   } catch (error) {

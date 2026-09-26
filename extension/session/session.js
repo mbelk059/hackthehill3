@@ -222,6 +222,7 @@ const voiceSources = [];
 
 function stopTutorAudio() {
   voiceOn = false;
+  setMouth(false);
   for (const source of voiceSources) {
     try { source.stop(); } catch { /* already stopped */ }
   }
@@ -262,6 +263,28 @@ function playTutor(base64) {
 
 const mascotEl = document.querySelector("#mascot");
 const captionEl = document.querySelector("#caption");
+const idleSrc = "../assets/mascot/idle.png";
+const talkSrc = "../assets/mascot/talk.png";
+let mouthTimer = null;
+let mouthOpen = false;
+
+function setMouth(isTalking) {
+  if (isTalking) {
+    if (mouthTimer) return;
+    mouthOpen = true;
+    mascotEl.src = talkSrc;
+    mouthTimer = setInterval(() => {
+      mouthOpen = !mouthOpen;
+      mascotEl.src = mouthOpen ? talkSrc : idleSrc;
+    }, 140);
+    return;
+  }
+  if (!mouthTimer && mascotEl.src.endsWith("idle.png")) return;
+  clearInterval(mouthTimer);
+  mouthTimer = null;
+  mouthOpen = false;
+  mascotEl.src = idleSrc;
+}
 let interruptRec = null;
 let interruptOn = false;
 let cutting = false;
@@ -366,6 +389,7 @@ function interruptBuddy() {
   }
   voiceSources.length = 0;
   voiceTime = 0;
+  setMouth(false);
   captionEl.hidden = true;
   captionEl.textContent = "";
   statusEl.textContent = "Go ahead!";
@@ -395,6 +419,7 @@ chrome.runtime.onMessage.addListener((message) => {
     captionEl.textContent = message.text || "";
   }
   if (message.type === "MOOD") mascotEl.classList.toggle("strict", message.mood === "strict");
+  if (message.type === "AMPLITUDE") setMouth(Boolean(message.talking));
 });
 
 refresh();
