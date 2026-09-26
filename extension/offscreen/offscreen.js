@@ -57,7 +57,9 @@ const session = {
   presageWs: null,
   nextTime: 0,
   sources: [],
-  debouncer: createMoodDebouncer({ toStrictMs: 4000, toCalmMs: 3000 }),
+  debouncer: createMoodDebouncer({ toStrictMs: 1500, toCalmMs: 2000 }),
+  voiceHold: null,
+  userHeard: "",
 };
 
 function postPresage(detail, ready = true) {
@@ -205,6 +207,7 @@ function openGemini(mood) {
           model: `models/${session.geminiModel}`,
           generationConfig: { responseModalities: ["AUDIO"] },
           outputAudioTranscription: {},
+          inputAudioTranscription: {},
           systemInstruction: { parts: [{ text: PROMPTS[mood] || PROMPTS.calm }] },
           realtimeInputConfig: {
             automaticActivityDetection: {
@@ -222,6 +225,8 @@ function openGemini(mood) {
 function handleGeminiContent(message) {
   const server = message.serverContent;
   if (!server) return;
+  const heard = server.inputTranscription?.text || "";
+  if (heard) noteUserSpeech(heard);
   if (session.dropModel) {
     if (server.interrupted || server.turnComplete) {
       session.dropModel = false;
@@ -256,6 +261,7 @@ function handleGeminiContent(message) {
       session.textBuffer = split.buffer;
       for (const sentence of split.sentences) speak(sentence);
       session.turnOpen = false;
+      session.userHeard = "";
       if (session.moodDirty) {
         session.moodDirty = false;
         reconnectGemini();
@@ -296,7 +302,8 @@ async function speakNow(sentence, epoch) {
     postStatus("Set ELEVENLABS_API_KEY in web/.env.local so the mascot can talk.");
     return;
   }
-  const voiceId = session.mood === "strict" ? configTts.voiceStrict : configTts.voiceCalm;
+  const voiceId = configTts.voiceCalm;
+  const strict = session.mood === "strict";
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=pcm_24000`, {
     method: "POST",
     headers: {
@@ -307,6 +314,11 @@ async function speakNow(sentence, epoch) {
     body: JSON.stringify({
       text: sentence,
       model_id: configTts.modelId || "eleven_flash_v2_5",
+      voice_settings: {
+        stability: strict ? 0.82 : 0.45,
+        similarity_boost: 0.8,
+        speed: strict ? 1.12 : 1,
+      },
     }),
   });
   if (!response.ok) {
@@ -334,7 +346,7 @@ function openTts(mood) {
   if (session.tts) {
     try { session.tts.close(); } catch { /* already closed */ }
   }
-  const voiceId = mood === "strict" ? configTts.voiceStrict : configTts.voiceCalm;
+  const voiceId = configTts.voiceCalm;
   return new Promise((resolve) => {
     let settled = false;
     const finish = () => {
@@ -466,17 +478,42 @@ function isTalking() {
   return Boolean(session.audioCtx && session.audioCtx.currentTime < session.nextTime - 0.05);
 }
 
-async function applyMood(next) {
+function requestedMode(text) {
+  const said = text.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  if (/\b(lock in|accountab|strict mode|be strict|hold me accountable|keep me honest|sois strict)\b/.test(said)) return "strict";
+  if (/\b(nicer|more nice|be nice|regular mode|be patient|be gentle|be kinder|calm down|go easy|plus gentil|sois plus doux|sois plus douce)\b/.test(said)) return "calm";
+  return null;
+}
+
+function noteUserSpeech(text) {
+  session.userHeard = `${session.userHeard} ${text}`.trim();
+  const next = requestedMode(session.userHeard);
+  if (!next) return;
+  session.userHeard = "";
+  session.voiceHold = next;
+  session.debouncer.reset();
+  applyMood(next, { defer: true });
+}
+
+async function applyMood(next, options = {}) {
   if (next !== "calm" && next !== "strict") return;
-  if (next === session.mood && !session.voiceDirty) {
+  if (next === session.mood && !session.voiceDirty && !options.defer) {
     chrome.runtime.sendMessage({ type: "MOOD", mood: next });
     return;
   }
+  const enteredStrict = options.announce && next === "strict" && next !== session.mood;
   session.mood = next;
   chrome.runtime.sendMessage({ type: "MOOD", mood: next });
+  if (enteredStrict) {
+    stopPlayback();
+    session.turnOpen = false;
+    session.textBuffer = "";
+    clearTimeout(session.flushTimer);
+    speak("Hey. Eyes on the page.");
+  }
   if (isTalking()) session.voiceDirty = true;
   if (!session.token) return;
-  if (session.turnOpen || isTalking()) session.moodDirty = true;
+  if (options.defer || (!enteredStrict && (session.turnOpen || isTalking()))) session.moodDirty = true;
   else await reconnectGemini();
 }
 
@@ -488,7 +525,9 @@ function onFocusSample(sample) {
   if (sample.label) postPresage(sample.label);
   const result = session.debouncer.push(sample.state, Date.now());
   if (result.changed) {
-    applyMood(result.mood);
+    if (session.voiceHold === "strict" && result.mood === "calm") return;
+    if (result.mood === "strict") session.voiceHold = null;
+    applyMood(result.mood, { announce: result.mood === "strict" });
     logAttention(sample.state, sample.score, true);
   }
 }

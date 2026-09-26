@@ -29,6 +29,8 @@ let acceptingFrames = false;
 let statusError = "";
 let lastUs = 0;
 let lastCode = "";
+let frameTransform = 0;
+let restarting = false;
 
 function timestampUs() {
   let us = Number(process.hrtime.bigint() / 1000n);
@@ -82,15 +84,19 @@ async function startSdk() {
     sdk.on("processingStatus", (status) => {
       console.log("Presage processing status", status);
       if (status === 3) acceptingFrames = true;
-      if (status === 4 || status === 5) acceptingFrames = false;
+      if (status === 4 || status === 5) {
+        acceptingFrames = false;
+        if (status === 5) recoverSdk();
+      }
     });
     sdk.on("error", (_code, message) => {
       acceptingFrames = false;
       statusError = message || "Presage error";
       console.error("Presage error", statusError);
-      broadcast(statusMessage());
+      recoverSdk();
     });
-    sdk.useCustomInput(presage.FrameTransform.kNone);
+    frameTransform = presage.FrameTransform.kNone;
+    sdk.useCustomInput(frameTransform);
     sdk.start();
     acceptingFrames = sdk.processingStatus !== 4 && sdk.processingStatus !== 5;
     console.log("Presage status after start", sdk.processingStatus, "accepting", acceptingFrames);
@@ -101,6 +107,31 @@ async function startSdk() {
     sdk = null;
     statusError = error.message;
   }
+}
+
+function recoverSdk() {
+  if (restarting || !sdk) return;
+  restarting = true;
+  acceptingFrames = false;
+  setTimeout(() => {
+    try {
+      sdk.reset();
+      sdk.useCustomInput(frameTransform);
+      sdk.start();
+      lastUs = 0;
+      lastCode = "";
+      acceptingFrames = sdk.processingStatus !== 4 && sdk.processingStatus !== 5;
+      statusError = "";
+      ready = true;
+      console.log("Presage restarted", sdk.processingStatus);
+      broadcast(statusMessage());
+    } catch (error) {
+      statusError = error.message;
+      console.error("Presage restart failed", statusError);
+      broadcast(statusMessage());
+    }
+    restarting = false;
+  }, 400);
 }
 
 function pushFrame(jpegBase64) {
