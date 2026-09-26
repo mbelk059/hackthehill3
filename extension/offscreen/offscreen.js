@@ -23,8 +23,11 @@ const session = {
   ptt: false,
   epoch: 0,
   acceptEpoch: null,
+  turnOpen: false,
   textBuffer: "",
   caption: "",
+  speakEpoch: 0,
+  dropModel: false,
   presageReady: false,
   lastFocusState: "",
   lastScore: null,
@@ -194,7 +197,13 @@ function openGemini(mood) {
           generationConfig: { responseModalities: ["AUDIO"] },
           outputAudioTranscription: {},
           systemInstruction: { parts: [{ text: PROMPTS[mood] || PROMPTS.calm }] },
-          realtimeInputConfig: { automaticActivityDetection: { disabled: true } },
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              prefixPaddingMs: 300,
+              silenceDurationMs: 700,
+            },
+          },
         },
       }));
     };
@@ -204,10 +213,25 @@ function openGemini(mood) {
 function handleGeminiContent(message) {
   const server = message.serverContent;
   if (!server) return;
+  if (session.dropModel) {
+    if (server.interrupted || server.turnComplete) {
+      session.dropModel = false;
+      session.turnOpen = false;
+      session.textBuffer = "";
+      clearTimeout(session.flushTimer);
+    }
+    return;
+  }
   if (session.acceptEpoch !== session.epoch) return;
   const spoken = server.outputTranscription?.text
     || (server.modelTurn?.parts || []).map((part) => part.text || "").join("");
   if (spoken) {
+    if (!session.turnOpen) {
+      session.turnOpen = true;
+      session.caption = "";
+      session.textBuffer = "";
+      logQuestion();
+    }
     session.caption += spoken;
     chrome.runtime.sendMessage({ type: "CAPTION", text: session.caption });
     const split = takeSentences(session.textBuffer, spoken, false);
@@ -222,7 +246,7 @@ function handleGeminiContent(message) {
       const split = takeSentences(session.textBuffer, "", true);
       session.textBuffer = split.buffer;
       for (const sentence of split.sentences) speak(sentence);
-      session.acceptEpoch = null;
+      session.turnOpen = false;
       if (session.moodDirty) {
         session.moodDirty = false;
         reconnectGemini();
@@ -249,11 +273,15 @@ let speakQueue = Promise.resolve();
 
 function speak(sentence) {
   const text = sentence.trim();
-  if (!text) return;
-  speakQueue = speakQueue.then(() => speakNow(text)).catch((error) => postStatus(error.message));
+  if (!text || !session.running) return;
+  const epoch = session.speakEpoch;
+  speakQueue = speakQueue.then(() => {
+    if (epoch !== session.speakEpoch || !session.running) return undefined;
+    return speakNow(text, epoch);
+  }).catch((error) => postStatus(error.message));
 }
 
-async function speakNow(sentence) {
+async function speakNow(sentence, epoch) {
   const configTts = session.ttsConfig;
   if (!configTts?.apiKey) {
     postStatus("Set ELEVENLABS_API_KEY in web/.env.local so the mascot can talk.");
@@ -278,7 +306,7 @@ async function speakNow(sentence) {
     return;
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (!bytes.byteLength) return;
+  if (!session.running || epoch !== session.speakEpoch || !bytes.byteLength) return;
   playPcm(bytesToBase64(bytes));
 }
 
@@ -363,6 +391,7 @@ function ensureAudio() {
 }
 
 function playPcm(base64) {
+  if (!session.running) return;
   ensureAudio();
   session.audioCtx.resume();
   const binary = atob(base64);
@@ -386,7 +415,18 @@ function playPcm(base64) {
   chrome.runtime.sendMessage({ type: "AUDIO_CHUNK", audio: base64 });
 }
 
+function interruptTutor() {
+  session.dropModel = session.turnOpen;
+  session.turnOpen = false;
+  session.textBuffer = "";
+  session.caption = "";
+  clearTimeout(session.flushTimer);
+  stopPlayback();
+  chrome.runtime.sendMessage({ type: "CAPTION", text: "" });
+}
+
 function stopPlayback() {
+  session.speakEpoch += 1;
   for (const source of session.sources) {
     try { source.stop(); } catch { /* already stopped */ }
   }
@@ -427,7 +467,7 @@ async function applyMood(next) {
   chrome.runtime.sendMessage({ type: "MOOD", mood: next });
   if (isTalking()) session.voiceDirty = true;
   if (!session.token) return;
-  if (session.ptt || session.acceptEpoch != null) session.moodDirty = true;
+  if (session.turnOpen || isTalking()) session.moodDirty = true;
   else await reconnectGemini();
 }
 
@@ -556,6 +596,20 @@ async function startWebcam() {
   }, WEBCAM_INTERVAL_MS);
 }
 
+async function logQuestion() {
+  if (!session.sessionId) return;
+  try {
+    await api("/api/event", {
+      sessionId: session.sessionId,
+      kind: "question",
+      mode: session.mood,
+      time: new Date().toISOString(),
+    });
+  } catch (error) {
+    postStatus(error.message);
+  }
+}
+
 function beginPtt() {
   if (!session.running || session.ptt) return;
   session.audioCtx?.resume();
@@ -574,18 +628,6 @@ async function endPtt() {
   session.ptt = false;
   session.acceptEpoch = session.epoch;
   sendGemini({ realtimeInput: { activityEnd: {} } });
-  if (session.sessionId) {
-    try {
-      await api("/api/event", {
-        sessionId: session.sessionId,
-        kind: "question",
-        mode: session.mood,
-        time: new Date().toISOString(),
-      });
-    } catch (error) {
-      postStatus(error.message);
-    }
-  }
 }
 
 async function startSession(message) {
@@ -609,6 +651,9 @@ async function startSession(message) {
     const retired = tokenResult.model === "gemini-live-2.5-flash-preview";
     session.geminiModel = retired ? GEMINI_MODEL_FALLBACK : (tokenResult.model || GEMINI_MODEL_FALLBACK);
     await openGemini("calm");
+    session.epoch += 1;
+    session.acceptEpoch = session.epoch;
+    session.turnOpen = false;
   } catch (error) {
     session.running = false;
     postStatus(error.message);
@@ -624,7 +669,7 @@ async function startSession(message) {
     await startWebcam();
     connectPresage();
   } catch (error) {
-    postStatus("Camera was blocked, so calm/strict will not switch on its own. Hold the mascot to talk.");
+    postStatus("Camera was blocked, so calm and strict will not switch on their own. Just talk, and Bunny Buddy will answer.");
   }
 
   try {
@@ -690,12 +735,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "STOP_SESSION") return reply(stopSession());
   if (message.type === "PTT_START") beginPtt();
   if (message.type === "PTT_END") endPtt();
-  if (message.type === "MIC_CHUNK" && session.ptt && message.audio) {
-    sendGemini({
-      realtimeInput: {
-        audio: { mimeType: "audio/pcm;rate=16000", data: message.audio },
-      },
-    });
+  if (message.type === "INTERRUPT") interruptTutor();
+  if (message.type === "MIC_CHUNK" && session.running && session.geminiReady && message.audio) {
+    const playing = session.audioCtx && session.audioCtx.currentTime < session.nextTime + 0.4;
+    if (!playing) {
+      sendGemini({
+        realtimeInput: {
+          audio: { mimeType: "audio/pcm;rate=16000", data: message.audio },
+        },
+      });
+    }
   }
   if (message.type === "PREVIEW_MOOD") applyMood(message.mood);
   return false;

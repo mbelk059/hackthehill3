@@ -23,17 +23,22 @@ header img {
 }
 
 #mascot {
-  width: 144px;
+  width: 128px;
   display: block;
-  margin: 12px auto 4px;
-  cursor: pointer;
+  margin: 8px auto 0;
   image-rendering: pixelated;
   user-select: none;
   -webkit-user-drag: none;
 }
 
-#mascot.listening {
-  transform: translateY(-6px);
+.bubble {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: #fffaf3;
+  border: 2px solid #241c16;
+  border-radius: 16px 16px 16px 4px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 #mascot.strict {
@@ -44,8 +49,35 @@ header img {
     drop-shadow(0 -3px 0 #e23d3d);
 }
 
-#caption {
-  text-align: center;
+#tools {
+  margin-top: 12px;
+}
+
+.modes {
+  display: flex;
+  gap: 8px;
+}
+
+.pill {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+  background: #fffaf3;
+}
+
+.pill.on {
+  background: #f4b8c8;
+}
+
+.quiet {
+  width: auto;
+  margin: 8px 12px 0 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: underline;
+  font-weight: 650;
 }
 
 h1 {
@@ -88,22 +120,4 @@ button.text {
 
 [hidden] {
   display: none !important;
-}
-
-#mood-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-#mood-label {
-  grid-column: 1 / -1;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-#mood-row button {
-  margin-top: 0;
-  font-size: 12px;
 }

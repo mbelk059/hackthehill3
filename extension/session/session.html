@@ -2,26 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Study Mascot</title>
+    <title>Bunny Buddy</title>
     <link rel="stylesheet" href="../popup/popup.css" />
   </head>
   <body>
     <header>
       <div>
-        <h1>Study Mascot</h1>
-        <p id="status">Click Start, then choose Allow.</p>
+        <h1>Bunny Buddy</h1>
+        <p id="status">Ready when you are!</p>
       </div>
     </header>
     <p id="error" hidden></p>
-    <img id="mascot" alt="Study mascot. Hold to talk." src="../assets/mascot/mascot.png" />
-    <p id="caption" class="hint" hidden></p>
-    <p class="hint">Hold the mascot, ask a question, then let go.</p>
-    <button id="start" type="button">Start studying</button>
-    <button id="stop" type="button" hidden>Stop</button>
-    <div id="mood-row" hidden>
-      <span id="mood-label">Calm</span>
-      <button id="preview-calm" type="button">Preview calm</button>
-      <button id="preview-strict" type="button">Preview strict</button>
+    <img id="mascot" alt="Bunny Buddy" src="../assets/mascot/mascot.png" />
+    <p id="caption" class="bubble" hidden></p>
+    <button id="start" type="button">Let's go!</button>
+    <div id="tools" hidden>
+      <div class="modes">
+        <button id="mode-calm" class="pill on" type="button">Calm</button>
+        <button id="mode-strict" class="pill" type="button">Strict</button>
+      </div>
+      <button id="stop" class="quiet" type="button">Stop</button>
+      <button id="dashboard" class="quiet" type="button">Dashboard</button>
     </div>
     <p id="presage" class="hint"></p>
     <script type="module" src="session.js"></script>

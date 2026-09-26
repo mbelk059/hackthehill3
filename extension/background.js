@@ -257,7 +257,7 @@ async function relayToTab(message) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "START_SESSION" || message.type === "STOP_SESSION" || message.type === "PTT_START" || message.type === "PTT_END" || message.type === "MIC_CHUNK" || message.type === "PREVIEW_MOOD" || message.type === "OFFSCREEN_PING") {
+  if (message.type === "START_SESSION" || message.type === "STOP_SESSION" || message.type === "PTT_START" || message.type === "PTT_END" || message.type === "INTERRUPT" || message.type === "MIC_CHUNK" || message.type === "PREVIEW_MOOD" || message.type === "OFFSCREEN_PING") {
     return false;
   }
   handle(message, sender)

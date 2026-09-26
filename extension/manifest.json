@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Study Mascot",
+  "name": "Bunny Buddy",
   "version": "1.0.0",
-  "description": "A screen-share study tutor with a pixel mascot.",
+  "description": "A screen-share study tutor with a pixel bunny.",
   "minimum_chrome_version": "116",
   "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "identity", "scripting", "sidePanel"],
   "host_permissions": ["<all_urls>"],
@@ -11,7 +11,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Study Mascot",
+    "default_title": "Bunny Buddy",
     "default_icon": "assets/mascot/mascot.png"
   },
   "side_panel": {
