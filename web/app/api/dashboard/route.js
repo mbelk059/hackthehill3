@@ -10,6 +10,10 @@ export function OPTIONS() {
 export async function GET(request) {
   const { user, error } = await requireUser(request);
   if (error) return error;
-  const data = await getDashboard(user.sub);
-  return json(data);
+  try {
+    const data = await getDashboard(user.sub);
+    return json(data);
+  } catch (cause) {
+    return json({ error: cause.message || "Could not load the dashboard." }, 500);
+  }
 }
