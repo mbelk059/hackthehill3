@@ -2,7 +2,7 @@ import "./globals.css";
 
 export const metadata = {
   title: "Bunny Buddy",
-  description: "Focus history for the screen-share study tutor.",
+  description: "A pixel bunny that tutors you from your study tab and notices when you look away.",
 };
 
 export default function RootLayout({ children }) {

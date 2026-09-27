@@ -1,4 +1,3 @@
-import Link from "next/link";
 import DashboardClient from "./DashboardClient.js";
 
 export default function DashboardPage() {
@@ -12,7 +11,7 @@ export default function DashboardPage() {
             <p className="lede">Minutes you stayed with the work, and the times you drifted.</p>
           </div>
         </div>
-        <Link className="button quiet" href="/">Home</Link>
+        <a className="button quiet" href="/auth/logout">Log out</a>
       </div>
       <DashboardClient />
     </main>
