@@ -9,8 +9,8 @@ export function OPTIONS() {
 export async function POST(request) {
   const { error } = await requireUser(request);
   if (error) return error;
-  const alice = "Xb7hH8MSUJpSbSDYk0k2";
-  const calm = process.env.ELEVENLABS_VOICE_CALM || alice;
+  const jessica = "cgSgspJ2msm6clMCkdW9";
+  const calm = process.env.ELEVENLABS_VOICE_CALM || jessica;
   const paidCalm = new Set([
     "0h0djH5IqUoVaa1Pnuq7",
     "21m00Tcm4TlvDq8ikWAM",
@@ -18,7 +18,7 @@ export async function POST(request) {
   ]);
   return json({
     apiKey: process.env.ELEVENLABS_API_KEY || "",
-    voiceCalm: paidCalm.has(calm) ? alice : calm,
+    voiceCalm: paidCalm.has(calm) ? jessica : calm,
     voiceStrict: calm,
     modelId: "eleven_flash_v2_5",
   });

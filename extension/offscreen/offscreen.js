@@ -316,10 +316,10 @@ async function speakNow(sentence, epoch) {
   }
   const voiceId = configTts.voiceCalm;
   const pace = session.mood === "strict"
-    ? { stability: 0.82, speed: 1.12 }
+    ? { stability: 1, similarity_boost: 0.55, speed: 1.2 }
     : session.mood === "nice"
-      ? { stability: 0.32, speed: 0.92 }
-      : { stability: 0.45, speed: 1 };
+      ? { stability: 0.32, similarity_boost: 0.8, speed: 0.92 }
+      : { stability: 0.38, similarity_boost: 0.8, speed: 0.96 };
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=pcm_24000&optimize_streaming_latency=3`,
     {
@@ -334,7 +334,7 @@ async function speakNow(sentence, epoch) {
         model_id: configTts.modelId || "eleven_flash_v2_5",
         voice_settings: {
           stability: pace.stability,
-          similarity_boost: 0.8,
+          similarity_boost: pace.similarity_boost,
           speed: pace.speed,
         },
       }),
@@ -564,7 +564,7 @@ async function applyMood(next, options = {}) {
     shownCaption = "";
     clearTimeout(session.flushTimer);
     chrome.runtime.sendMessage({ type: "CAPTION", text: "" });
-    speak(next === "nice" ? "Hey. Let's slow down." : "Hey. Eyes on the page.");
+    speak(next === "nice" ? "Hey. Let's slow down." : "Eyes on the page. Now.");
   }
   if (isTalking()) session.voiceDirty = true;
   if (!session.token) return;
