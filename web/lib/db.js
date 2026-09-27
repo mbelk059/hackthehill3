@@ -22,15 +22,7 @@ function writeStore(store) {
 
 function getPool() {
   if (!process.env.DATABASE_URL) return null;
-  if (!pool) {
-    const connectionString = process.env.DATABASE_URL
-      .replace(/([?&])sslmode=[^&]*&?/, "$1")
-      .replace(/[?&]$/, "");
-    pool = new pg.Pool({
-      connectionString,
-      ssl: { rejectUnauthorized: false },
-    });
-  }
+  if (!pool) pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   return pool;
 }
 
