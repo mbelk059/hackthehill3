@@ -19,6 +19,7 @@ export async function getAuth0() {
         clientSecret: process.env.AUTH0_CLIENT_SECRET,
         secret: process.env.AUTH0_SECRET,
         appBaseUrl: process.env.APP_BASE_URL || "http://localhost:3000",
+        signInReturnToPath: "/dashboard",
         authorizationParameters: {
           audience: process.env.AUTH0_AUDIENCE || undefined,
           scope: "openid profile email",

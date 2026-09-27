@@ -11,7 +11,10 @@ export default function DashboardPage() {
             <p className="lede">Minutes you stayed with the work, and the times you drifted.</p>
           </div>
         </div>
-        <a className="button quiet" href="/auth/logout">Log out</a>
+        <div className="actions">
+          <a className="button" href="/">Home</a>
+          <a className="button quiet" href="/auth/logout">Log out</a>
+        </div>
       </div>
       <DashboardClient />
     </main>

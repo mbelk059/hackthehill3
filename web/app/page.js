@@ -1,20 +1,19 @@
-import { redirect } from "next/navigation";
 import { authConfigured, getSessionUser } from "../lib/auth.js";
 
 export default async function HomePage() {
   const user = await getSessionUser();
-  if (user) redirect("/dashboard");
-
   const auth0 = authConfigured();
   const dev = process.env.DEV_AUTH_BYPASS === "1";
-  const enter = auth0 ? "/auth/login" : "/dashboard";
+  const dashboardHref = user || !auth0 ? "/dashboard" : "/auth/login";
+  const accountHref = user ? "/auth/logout" : auth0 ? "/auth/login" : "/dashboard";
+  const accountLabel = user ? "Log out" : auth0 ? "Log in" : "Open dashboard";
 
   return (
     <main className="page home">
       <header className="home-bar">
         <p className="home-mark">Bunny Buddy</p>
         <div className="actions">
-          <a className="button" href={enter}>{auth0 ? "Log in" : "Open dashboard"}</a>
+          <a className="button" href={accountHref}>{accountLabel}</a>
         </div>
       </header>
 
@@ -26,7 +25,7 @@ export default async function HomePage() {
             Share your tab, ask a question, and get a hint. Look away and it will notice.
           </p>
           <div className="home-cta">
-            <a className="button" href={enter}>{auth0 ? "Log in" : "Open dashboard"}</a>
+            <a className="button" href={dashboardHref}>See your focus dashboard</a>
           </div>
           {!auth0 && dev ? <p className="who">Local dev mode until Auth0 is filled in.</p> : null}
         </div>
