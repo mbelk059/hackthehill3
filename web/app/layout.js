@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Study Mascot",
+  title: "Bunny Buddy",
   description: "Focus history for the screen-share study tutor.",
 };
 
