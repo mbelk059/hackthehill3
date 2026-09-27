@@ -52,11 +52,15 @@ async function armMicrophone({ camera = true } = {}) {
   });
   micStream = stream;
   if (camera) {
-    try {
-      const cam = await navigator.mediaDevices.getUserMedia({ video: true });
-      cam.getTracks().forEach((track) => track.stop());
-    } catch {
-      // The tutor can still hear you if the camera stays off.
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const alreadyAllowed = devices.some((device) => device.kind === "videoinput" && device.label);
+    if (!alreadyAllowed) {
+      try {
+        const cam = await navigator.mediaDevices.getUserMedia({ video: true });
+        cam.getTracks().forEach((track) => track.stop());
+      } catch {
+        // The tutor can still hear you if the camera stays off.
+      }
     }
   }
   if (!workletReady) {

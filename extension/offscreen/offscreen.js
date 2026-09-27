@@ -31,6 +31,8 @@ const session = {
   presageReady: false,
   lastFocusState: "",
   lastScore: null,
+  framesSent: 0,
+  blankFrames: 0,
   gemini: null,
   geminiReady: false,
   tts: null,
@@ -123,7 +125,11 @@ function attachVideo(stream) {
   video.muted = true;
   video.playsInline = true;
   video.srcObject = stream;
-  video.style.display = "none";
+  video.style.position = "fixed";
+  video.style.width = "2px";
+  video.style.height = "2px";
+  video.style.opacity = "0.02";
+  video.style.pointerEvents = "none";
   document.body.append(video);
   return video.play().then(() => video);
 }
@@ -589,7 +595,7 @@ async function applyMood(next, options = {}) {
 }
 
 function onFocusSample(sample) {
-  if (!sample?.state) return;
+  if (!sample?.state || !session.framesSent) return;
   session.presageReady = true;
   session.lastFocusState = sample.state;
   session.lastScore = sample.score;
@@ -643,7 +649,7 @@ function connectPresage() {
 }
 
 async function logAttention(state, score, isTransition) {
-  if (!session.sessionId || !session.presageReady) return;
+  if (!session.sessionId || !session.presageReady || !session.framesSent) return;
   try {
     await api("/api/event", {
       sessionId: session.sessionId,
@@ -718,18 +724,95 @@ async function startMic() {
   session.worklet = worklet;
 }
 
+function frameBrightness(context, width, height) {
+  const pixels = context.getImageData(0, 0, width, height).data;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < pixels.length; i += 64) {
+    sum += pixels[i] + pixels[i + 1] + pixels[i + 2];
+    count += 1;
+  }
+  return count ? sum / (count * 3) : 0;
+}
+
+function frameJpeg(source) {
+  const width = 640;
+  const height = 480;
+  const sourceWidth = source.videoWidth || source.width;
+  const sourceHeight = source.videoHeight || source.height;
+  if (!sourceWidth || !sourceHeight) return "";
+  if (!session.frameCanvas) session.frameCanvas = document.createElement("canvas");
+  const canvas = session.frameCanvas;
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(source, 0, 0, width, height);
+  if (frameBrightness(context, width, height) < 4) return "";
+  return canvas.toDataURL("image/jpeg", 0.7).split(",")[1];
+}
+
+function restartWebcam() {
+  if (session.webcamRestarting || !session.running) return;
+  session.webcamRestarting = true;
+  session.framesSent = 0;
+  session.lastFocusState = "";
+  setTimeout(() => {
+    session.webcamRestarting = false;
+    if (!session.running) return;
+    startWebcam().catch((error) => postStatus(error.message));
+  }, 400);
+}
+
+async function sendWebcamFrame() {
+  if (!session.running || session.presageWs?.readyState !== WebSocket.OPEN) return;
+  let jpeg = "";
+  try {
+    if (session.webcamCapture) {
+      const bitmap = await session.webcamCapture.grabFrame();
+      jpeg = frameJpeg(bitmap);
+      bitmap.close?.();
+    } else if (session.webcamVideo?.readyState >= 2) {
+      jpeg = frameJpeg(session.webcamVideo);
+    }
+  } catch {
+    if (session.webcamVideo?.readyState >= 2) jpeg = frameJpeg(session.webcamVideo);
+  }
+  if (!jpeg) {
+    session.blankFrames += 1;
+    if (session.blankFrames === 24) restartWebcam();
+    return;
+  }
+  session.blankFrames = 0;
+  session.framesSent += 1;
+  session.presageWs?.send(JSON.stringify({ type: "frame", jpeg }));
+}
+
 async function startWebcam() {
+  clearInterval(session.webcamTimer);
+  const previous = session.webcamStream;
+  session.webcamStream = null;
+  session.webcamCapture = null;
+  previous?.getTracks().forEach((track) => track.stop());
+  session.webcamVideo?.remove();
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "user", width: 640, height: 480 },
+    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
     audio: false,
   });
+  if (!session.running) {
+    stream.getTracks().forEach((track) => track.stop());
+    return;
+  }
   session.webcamStream = stream;
+  session.blankFrames = 0;
+  const track = stream.getVideoTracks()[0];
+  session.webcamCapture = typeof ImageCapture === "function" ? new ImageCapture(track) : null;
+  track.onended = () => {
+    if (!session.running || session.webcamStream !== stream) return;
+    restartWebcam();
+  };
   session.webcamVideo = await attachVideo(stream);
   session.webcamTimer = setInterval(() => {
-    if (!session.webcamVideo || session.webcamVideo.readyState < 2) return;
-    if (session.presageWs?.readyState !== WebSocket.OPEN) return;
-    const jpeg = grabJpeg(session.webcamVideo, 640, 480, 0.7);
-    session.presageWs.send(JSON.stringify({ type: "frame", jpeg }));
+    sendWebcamFrame().catch(() => {});
   }, WEBCAM_INTERVAL_MS);
 }
 
@@ -774,6 +857,10 @@ async function startSession(message) {
   session.tabId = message.tabId;
   session.mood = "calm";
   session.pace = 0;
+  session.framesSent = 0;
+  session.blankFrames = 0;
+  session.lastFocusState = "";
+  session.lastScore = null;
   session.debouncer.reset();
   session.caption = "";
   try {
@@ -804,17 +891,17 @@ async function startSession(message) {
   }
 
   try {
-    await startWebcam();
-    connectPresage();
-  } catch (error) {
-    postStatus("Camera was blocked, so calm and strict will not switch on their own. Just talk, and Bunny Buddy will answer.");
-  }
-
-  try {
     const started = await api("/api/session/start", {});
     session.sessionId = started.sessionId;
   } catch (error) {
     postStatus(error.message);
+  }
+
+  try {
+    await startWebcam();
+    connectPresage();
+  } catch (error) {
+    postStatus("Camera was blocked, so calm and strict will not switch on their own. Just talk, and Bunny Buddy will answer.");
   }
 
   session.sampleTimer = setInterval(() => {
