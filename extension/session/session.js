@@ -9,7 +9,6 @@ const tools = document.querySelector("#tools");
 const calmButton = document.querySelector("#mode-calm");
 const strictButton = document.querySelector("#mode-strict");
 const niceButton = document.querySelector("#mode-nice");
-const presageEl = document.querySelector("#presage");
 let localError = "";
 let statusNote = "";
 let starting = false;
@@ -96,13 +95,8 @@ function render(state) {
   if (!state) return;
   signedIn = Boolean(state.loggedIn);
   if (!starting) {
-    if (!signedIn) {
-      statusEl.textContent = "Log in here too!";
-      startButton.textContent = "Log in";
-    } else {
-      statusEl.textContent = statusNote || (state.studying ? "Just talk! Say stop or arrête to cut in." : "Ready when you are!");
-      startButton.textContent = "Let's go!";
-    }
+    statusEl.textContent = statusNote || (state.studying ? "Just talk! Say stop to cut in." : "Ready when you are!");
+    startButton.textContent = signedIn ? "Let's go!" : "Log in";
   }
   startButton.hidden = state.studying;
   tools.hidden = !state.studying;
@@ -112,10 +106,6 @@ function render(state) {
   niceButton.classList.toggle("on", mood === "nice");
   mascotEl?.classList.toggle("strict", mood === "strict");
   mascotEl?.classList.toggle("nice", mood === "nice");
-  const detail = state.presage?.detail || "";
-  const cameraNote = state.studying && detail && !/not connected|offline/i.test(detail);
-  presageEl.hidden = !cameraNote;
-  presageEl.textContent = cameraNote ? detail : "";
   const message = localError || state.lastError || "";
   showError(!signedIn && message === "Log in first." ? "" : message);
 }
@@ -222,7 +212,7 @@ startButton.addEventListener("click", async () => {
       throw new Error(started?.error || "Could not start the tutor.");
     }
     talking = true;
-    statusEl.textContent = "Just talk! Say stop or arrête to cut in.";
+    statusEl.textContent = "Just talk! Say stop to cut in.";
   } catch (error) {
     localError = captureError(error);
     stopTutorAudio();

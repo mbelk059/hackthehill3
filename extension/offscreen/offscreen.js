@@ -59,6 +59,7 @@ const session = {
   sources: [],
   debouncer: createMoodDebouncer({ toStrictMs: 1500, toCalmMs: 2000 }),
   voiceHold: null,
+  pace: 0,
   userHeard: "",
   stressed: false,
 };
@@ -316,10 +317,11 @@ async function speakNow(sentence, epoch) {
   }
   const voiceId = configTts.voiceCalm;
   const pace = session.mood === "strict"
-    ? { stability: 1, similarity_boost: 0.55, speed: 1.2 }
+    ? { stability: 1, similarity_boost: 0.55, speed: 1.08 }
     : session.mood === "nice"
-      ? { stability: 0.32, similarity_boost: 0.8, speed: 0.92 }
-      : { stability: 0.38, similarity_boost: 0.8, speed: 0.96 };
+      ? { stability: 0.32, similarity_boost: 0.8, speed: 0.82 }
+      : { stability: 0.38, similarity_boost: 0.8, speed: 0.88 };
+  const speed = Math.max(0.7, Math.min(1.2, pace.speed + (session.pace || 0)));
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=pcm_24000&optimize_streaming_latency=3`,
     {
@@ -335,7 +337,7 @@ async function speakNow(sentence, epoch) {
         voice_settings: {
           stability: pace.stability,
           similarity_boost: pace.similarity_boost,
-          speed: pace.speed,
+          speed,
         },
       }),
     },
@@ -529,15 +531,28 @@ function isTalking() {
   return Boolean(session.audioCtx && session.audioCtx.currentTime < session.nextTime - 0.05);
 }
 
+function requestedPace(text) {
+  const said = text.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  if (/\b(slow down|slower|speak slower|talk slower|too fast|not so fast|ralentis|moins vite)\b/.test(said)) return -0.08;
+  if (/\b(speed up|faster|speak faster|talk faster|speed it up|plus vite)\b/.test(said)) return 0.08;
+  return 0;
+}
+
 function requestedMode(text) {
   const said = text.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
   if (/\b(lock in|accountab|strict bunny|strict mode|be strict|hold me accountable|keep me honest|sois strict)\b/.test(said)) return "strict";
-  if (/\b(nice bunny|nicer|more nice|be gentle|reassure|slow down|plus gentil|sois plus doux|sois plus douce)\b/.test(said)) return "nice";
+  if (/\b(nice bunny|nicer|more nice|be gentle|reassure|plus gentil|sois plus doux|sois plus douce)\b/.test(said)) return "nice";
   if (/\b(bunny buddy|regular mode|normal mode|be regular)\b/.test(said)) return "calm";
   return null;
 }
 
 function noteUserSpeech(text) {
+  const delta = requestedPace(text);
+  if (delta) {
+    session.pace = Math.max(-0.16, Math.min(0.16, (session.pace || 0) + delta));
+    session.userHeard = "";
+    return;
+  }
   session.userHeard = `${session.userHeard} ${text}`.trim();
   const next = requestedMode(session.userHeard);
   if (!next) return;
@@ -757,6 +772,7 @@ async function startSession(message) {
   session.streamId = message.streamId;
   session.tabId = message.tabId;
   session.mood = "calm";
+  session.pace = 0;
   session.debouncer.reset();
   session.caption = "";
   try {

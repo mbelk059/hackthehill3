@@ -13,19 +13,20 @@
       </div>
     </header>
     <p id="error" hidden></p>
-    <img id="mascot" alt="Bunny Buddy" src="../assets/mascot/idle.png" width="128" height="128" />
-    <p id="caption" class="bubble" hidden></p>
-    <button id="start" type="button">Let's go!</button>
-    <div id="tools" hidden>
-      <div class="modes">
-        <button id="mode-calm" class="pill on" type="button">Bunny Buddy</button>
-        <button id="mode-strict" class="pill" type="button">Strict Bunny</button>
-        <button id="mode-nice" class="pill" type="button">Nice Bunny</button>
+    <div id="stage">
+      <img id="mascot" alt="Bunny Buddy" src="../assets/mascot/idle.png" width="192" height="192" />
+      <p id="caption" class="bubble" hidden></p>
+      <button id="start" type="button">Let's go!</button>
+      <div id="tools" hidden>
+        <div class="modes">
+          <button id="mode-calm" class="pill on" type="button">Bunny Buddy</button>
+          <button id="mode-strict" class="pill" type="button">Strict Bunny</button>
+          <button id="mode-nice" class="pill" type="button">Nice Bunny</button>
+        </div>
+        <button id="stop" class="quiet" type="button">Stop</button>
+        <button id="dashboard" class="quiet" type="button">Dashboard</button>
       </div>
-      <button id="stop" class="quiet" type="button">Stop</button>
-      <button id="dashboard" class="quiet" type="button">Dashboard</button>
     </div>
-    <p id="presage" class="hint"></p>
     <script type="module" src="session.js"></script>
   </body>
 </html>
