@@ -353,10 +353,12 @@ function listenForCutIn() {
     const rec = new Rec();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = "fr-CA";
+    rec.lang = "en-US";
     rec.onresult = (event) => {
-      const latest = event.results[event.results.length - 1];
-      const said = latest?.[0]?.transcript || "";
+      let said = "";
+      for (let i = 0; i < event.results.length; i += 1) {
+        said += `${event.results[i][0]?.transcript || ""} `;
+      }
       if (isCutIn(said)) interruptBuddy();
     };
     rec.onerror = () => {};

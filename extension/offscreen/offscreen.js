@@ -323,7 +323,7 @@ async function speakNow(sentence, epoch) {
       : { stability: 0.38, similarity_boost: 0.8, speed: 0.88 };
   const speed = Math.max(0.7, Math.min(1.2, pace.speed + (session.pace || 0)));
   const response = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=pcm_24000&optimize_streaming_latency=3`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=pcm_24000`,
     {
       method: "POST",
       headers: {
@@ -355,8 +355,8 @@ async function speakNow(sentence, epoch) {
     playPcm(bytesToBase64(bytes));
     return;
   }
-  let pending = new Uint8Array(0);
-  let started = false;
+  const pieces = [];
+  let length = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (!session.running || epoch !== session.speakEpoch) {
@@ -364,23 +364,24 @@ async function speakNow(sentence, epoch) {
       return;
     }
     if (value?.byteLength) {
-      const merged = new Uint8Array(pending.length + value.length);
-      merged.set(pending, 0);
-      merged.set(value, pending.length);
-      const even = merged.length - (merged.length % 2);
-      if (even > 0) {
-        pending = merged.subarray(even);
-        if (!started) {
-          started = true;
-          showSpoken(sentence);
-        }
-        playPcm(bytesToBase64(merged.subarray(0, even)));
-      } else {
-        pending = merged;
-      }
+      pieces.push(value);
+      length += value.byteLength;
     }
     if (done) break;
   }
+  const even = length - (length % 2);
+  if (even < 2) return;
+  const merged = new Uint8Array(even);
+  let offset = 0;
+  for (const piece of pieces) {
+    const room = even - offset;
+    if (room <= 0) break;
+    const count = Math.min(room, piece.byteLength);
+    merged.set(piece.subarray(0, count), offset);
+    offset += count;
+  }
+  showSpoken(sentence);
+  playPcm(bytesToBase64(merged));
 }
 
 function ttsUrl(voiceId, modelId) {
