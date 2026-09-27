@@ -1,7 +1,11 @@
 import { config } from "./config.js";
 
-chrome.sidePanel.setOptions({ path: "session/session.html", enabled: true }).catch(() => {});
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+chrome.sidePanel
+  .setOptions({ path: "session/session.html", enabled: true })
+  .catch(() => {});
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: false })
+  .catch(() => {});
 
 let studying = false;
 let studyTabId = null;
@@ -25,11 +29,19 @@ async function hydrate() {
   mood = stored.mood || "calm";
   presage = stored.presage || presage;
   lastError = stored.lastError || "";
-  if (/message channel closed|asynchronous response/i.test(lastError)) lastError = "";
+  if (/message channel closed|asynchronous response/i.test(lastError))
+    lastError = "";
 }
 
 function persist() {
-  return chrome.storage.session.set({ studying, studyTabId, invokedTabId, mood, presage, lastError });
+  return chrome.storage.session.set({
+    studying,
+    studyTabId,
+    invokedTabId,
+    mood,
+    presage,
+    lastError,
+  });
 }
 
 chrome.action.onClicked.addListener((tab) => {
@@ -43,7 +55,10 @@ const hydratePromise = hydrate();
 function base64url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 function decodeJwtPayload(token) {
@@ -110,7 +125,10 @@ async function login() {
   const verifierBytes = new Uint8Array(32);
   crypto.getRandomValues(verifierBytes);
   const verifier = base64url(verifierBytes);
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(verifier),
+  );
   const challenge = base64url(new Uint8Array(digest));
   const redirectUri = chrome.identity.getRedirectURL();
   const params = new URLSearchParams({
@@ -132,19 +150,23 @@ async function login() {
   const authError = new URL(responseUrl).searchParams.get("error_description");
   if (!code) throw new Error(authError || "Auth0 did not return a code.");
 
-  const tokenResponse = await fetch(`https://${config.auth0Domain}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: config.auth0ClientId,
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: verifier,
-    }),
-  });
+  const tokenResponse = await fetch(
+    `https://${config.auth0Domain}/oauth/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: config.auth0ClientId,
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+      }),
+    },
+  );
   const data = await tokenResponse.json();
-  if (!tokenResponse.ok) throw new Error(data.error_description || "Token exchange failed.");
+  if (!tokenResponse.ok)
+    throw new Error(data.error_description || "Token exchange failed.");
 
   const profile = data.id_token ? decodeJwtPayload(data.id_token) : {};
   const auth = {
@@ -171,7 +193,8 @@ async function ensureOffscreen() {
   await chrome.offscreen.createDocument({
     url: "offscreen/offscreen.html",
     reasons: ["USER_MEDIA", "AUDIO_PLAYBACK"],
-    justification: "Capture the study tab, microphone, and webcam, and play the tutor voice.",
+    justification:
+      "Capture the study tab, microphone, and webcam, and play the tutor voice.",
   });
 }
 
@@ -182,7 +205,8 @@ async function startStudy(message) {
     token = await getAccessToken();
   }
   if (!token) throw new Error("Log in first.");
-  if (!message.streamId || !message.tabId) throw new Error("Missing tab capture.");
+  if (!message.streamId || !message.tabId)
+    throw new Error("Missing tab capture.");
   lastError = "";
   await persist();
 
@@ -202,7 +226,10 @@ async function startStudy(message) {
   lastError = "";
   await persist();
   try {
-    await chrome.tabs.sendMessage(message.tabId, { type: "MASCOT", visible: false });
+    await chrome.tabs.sendMessage(message.tabId, {
+      type: "MASCOT",
+      visible: false,
+    });
   } catch {
     // The page mascot stays off. The character lives in the side panel.
   }
@@ -223,13 +250,18 @@ async function stopStudy() {
     await chrome.offscreen.closeDocument();
   }
   const tabs = await chrome.tabs.query({});
-  await Promise.all(tabs.map(async (tab) => {
-    try {
-      await chrome.tabs.sendMessage(tab.id, { type: "MASCOT", visible: false });
-    } catch {
-      // This tab has no mascot.
-    }
-  }));
+  await Promise.all(
+    tabs.map(async (tab) => {
+      try {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: "MASCOT",
+          visible: false,
+        });
+      } catch {
+        // This tab has no mascot.
+      }
+    }),
+  );
   return { ok: true };
 }
 
@@ -261,7 +293,16 @@ async function relayToTab(message) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "START_SESSION" || message.type === "STOP_SESSION" || message.type === "PTT_START" || message.type === "PTT_END" || message.type === "INTERRUPT" || message.type === "MIC_CHUNK" || message.type === "PREVIEW_MOOD" || message.type === "OFFSCREEN_PING") {
+  if (
+    message.type === "START_SESSION" ||
+    message.type === "STOP_SESSION" ||
+    message.type === "PTT_START" ||
+    message.type === "PTT_END" ||
+    message.type === "INTERRUPT" ||
+    message.type === "MIC_CHUNK" ||
+    message.type === "PREVIEW_MOOD" ||
+    message.type === "OFFSCREEN_PING"
+  ) {
     return false;
   }
   handle(message, sender)
@@ -308,7 +349,12 @@ async function handle(message, sender) {
     await persist();
     return { ok: true };
   }
-  if (message.type === "AMPLITUDE" || message.type === "CAPTION" || message.type === "MASCOT" || message.type === "AUDIO_CHUNK") {
+  if (
+    message.type === "AMPLITUDE" ||
+    message.type === "CAPTION" ||
+    message.type === "MASCOT" ||
+    message.type === "AUDIO_CHUNK"
+  ) {
     await relayToTab(message);
     return { ok: true };
   }
@@ -323,4 +369,14 @@ chrome.tabs.onUpdated.addListener((tabId, info) => {
   if (tabId === studyTabId && info.status === "complete") {
     relayToTab({ type: "MASCOT", visible: false });
   }
+});
+
+//the dashboard setting to persist across all browser tabs (even outside the dashboard domain), save the settings in the popup using
+chrome.storage.sync.set({ afkEnabled: true, afkMinutes: 10 });
+
+// Inside content/mascot.js
+chrome.storage.sync.get(["afkEnabled", "afkMinutes"], (data) => {
+  if (data.afkMinutes) afkConfig.afkMinutes = data.afkMinutes;
+  if (data.afkEnabled !== undefined) afkConfig.afkEnabled = data.afkEnabled;
+  resetAfkTimer();
 });

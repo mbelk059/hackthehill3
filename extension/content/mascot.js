@@ -86,7 +86,9 @@ if (window.top === window) {
     sprite.addEventListener("pointerdown", async (event) => {
       event.preventDefault();
       pageAudio();
-      const state = await chrome.runtime.sendMessage({ type: "GET_STATE" }).catch(() => null);
+      const state = await chrome.runtime
+        .sendMessage({ type: "GET_STATE" })
+        .catch(() => null);
       if (!state?.studying) {
         hint.textContent = "Open the side panel and click Start studying.";
         return;
@@ -130,7 +132,9 @@ if (window.top === window) {
       if (mouthTimer) return;
       mouthTimer = setInterval(() => {
         mouthOpen = !mouthOpen;
-        sprite.src = chrome.runtime.getURL(mouthOpen ? "assets/mascot/talk.png" : "assets/mascot/idle.png");
+        sprite.src = chrome.runtime.getURL(
+          mouthOpen ? "assets/mascot/talk.png" : "assets/mascot/idle.png",
+        );
       }, 140);
       return;
     }
@@ -144,12 +148,14 @@ if (window.top === window) {
   function onMessage(message) {
     if (message.type === "MASCOT") {
       setVisible(Boolean(message.visible));
-      if (message.mood && sprite) sprite.classList.toggle("strict", message.mood === "strict");
+      if (message.mood && sprite)
+        sprite.classList.toggle("strict", message.mood === "strict");
     }
     if (message.type === "MOOD" && sprite) {
       sprite.classList.toggle("strict", message.mood === "strict");
     }
-    if (message.type === "AMPLITUDE") setTalking(Boolean(message.talking), message.value);
+    if (message.type === "AMPLITUDE")
+      setTalking(Boolean(message.talking), message.value);
     if (message.type === "CAPTION" && bubble) {
       bubble.textContent = message.text || "";
       bubble.hidden = !message.text;
@@ -157,7 +163,8 @@ if (window.top === window) {
   }
 
   function onKeyDown(event) {
-    if (!visible || event.code !== "Backquote" || event.repeat || holding) return;
+    if (!visible || event.code !== "Backquote" || event.repeat || holding)
+      return;
     event.preventDefault();
     pageAudio();
     holding = true;
@@ -193,3 +200,46 @@ if (window.top === window) {
     if (sprite) sprite.classList.toggle("strict", state.mood === "strict");
   });
 }
+
+//AFK
+let afkTimeout = null;
+let afkConfig = { afkEnabled: true, afkMinutes: 1 };
+
+// 1. Listen for settings messages dispatched from the Dashboard web page
+window.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "UPDATE_AFK_SETTINGS") {
+    afkConfig = event.data.config;
+    resetAfkTimer();
+  }
+});
+
+// 2. Activity reset logic
+function resetAfkTimer() {
+  if (afkTimeout) clearTimeout(afkTimeout);
+
+  // If disabled, don't set a timer
+  if (!afkConfig.afkEnabled) return;
+
+  const timeoutMs = afkConfig.afkMinutes * 60 * 1000;
+
+  afkTimeout = setTimeout(() => {
+    // Trigger mascot prompt or browser alert
+    if (typeof window.showMascotMessage === "function") {
+      window.showMascotMessage(
+        `🚨 Hey! You've been away for ${afkConfig.afkMinutes}m. Get back to studying!`,
+      );
+    } else {
+      alert(
+        `🚨 Hey! Get back to studying! (Away for ${afkConfig.afkMinutes}m)`,
+      );
+    }
+  }, timeoutMs);
+}
+
+// 3. Reset timer on user mouse/keyboard input
+["mousemove", "keydown", "scroll", "click"].forEach((evt) => {
+  window.addEventListener(evt, resetAfkTimer, { passive: true });
+});
+
+// Initialize on page load
+resetAfkTimer();
