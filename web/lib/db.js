@@ -5,6 +5,7 @@ import pg from "pg";
 const storePath = path.join(process.cwd(), "data", "store.json");
 let pool;
 let ready;
+let fileFallback = false;
 
 function emptyStore() {
   return { sessions: [], attention_events: [], questions: [] };
@@ -21,7 +22,7 @@ function writeStore(store) {
 }
 
 function getPool() {
-  if (!process.env.DATABASE_URL) return null;
+  if (fileFallback || !process.env.DATABASE_URL) return null;
   if (!pool) {
     const connectionString = process.env.DATABASE_URL
       .replace(/([?&])sslmode=[^&]*&?/, "$1")
@@ -29,9 +30,26 @@ function getPool() {
     pool = new pg.Pool({
       connectionString,
       ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 1500,
     });
   }
   return pool;
+}
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Tiger Data timed out")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 export function storageKind() {
@@ -54,21 +72,31 @@ export async function initDb() {
     ready = true;
     return;
   }
-  const schema = fs.readFileSync(path.join(process.cwd(), "db", "schema.sql"), "utf8");
-  const statements = schema
-    .split(";")
-    .map((statement) => statement.trim())
-    .filter(Boolean);
-  for (const statement of statements) {
-    await db.query(statement);
-  }
   try {
-    await db.query("CREATE EXTENSION IF NOT EXISTS timescaledb");
-    await db.query("SELECT create_hypertable('attention_events', 'time', if_not_exists => TRUE)");
+    const schema = fs.readFileSync(path.join(process.cwd(), "db", "schema.sql"), "utf8");
+    const statements = schema
+      .split(";")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    await withTimeout((async () => {
+      for (const statement of statements) {
+        await db.query(statement);
+      }
+      try {
+        await db.query("CREATE EXTENSION IF NOT EXISTS timescaledb");
+        await db.query("SELECT create_hypertable('attention_events', 'time', if_not_exists => TRUE)");
+      } catch (error) {
+        console.warn("Timescale hypertable was not created:", error.message);
+      }
+    })(), 1500);
+    ready = true;
   } catch (error) {
-    console.warn("Timescale hypertable was not created:", error.message);
+    console.warn("Tiger Data is unreachable, using the local file:", error.message);
+    pool?.end().catch(() => {});
+    pool = null;
+    fileFallback = true;
+    ready = true;
   }
-  ready = true;
 }
 
 async function assertSession(userSub, sessionId) {
@@ -199,7 +227,14 @@ function buildDashboard(sessions, events, questions) {
         questions: questions.filter((question) => question.session_id === session.id).length,
       };
     });
-  return { focusSeries, focusPct, distractionCount, questionCount, sessions: sessionRows, storage: "file" };
+  return {
+    focusSeries,
+    focusPct,
+    distractionCount,
+    questionCount,
+    sessions: sessionRows,
+    storage: fileFallback ? "file-fallback" : "file",
+  };
 }
 
 async function querySeries(db, userSub) {

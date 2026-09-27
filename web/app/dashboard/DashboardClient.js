@@ -96,7 +96,13 @@ export default function DashboardClient() {
     let cancelled = false;
     fetch("/api/dashboard")
       .then(async (response) => {
-        const body = await response.json();
+        const text = await response.text();
+        let body = {};
+        try {
+          body = text ? JSON.parse(text) : {};
+        } catch {
+          throw new Error("Could not load the dashboard.");
+        }
         if (!response.ok)
           throw new Error(body.error || "Could not load the dashboard.");
         if (!cancelled) setData(body);
@@ -231,11 +237,11 @@ export default function DashboardClient() {
         )}
       </section>
       <p className="label">
-        Stored in{" "}
         {data.storage === "tiger"
-          ? "Tiger Data"
-          : "a local file until DATABASE_URL is set"}
-        .
+          ? "Stored in Tiger Data."
+          : data.storage === "file-fallback"
+            ? "Tiger Data did not respond, so this chart is from the local file."
+            : "Stored in a local file until DATABASE_URL is set."}
       </p>
       {/* --- ADD AFK WARNING MODAL HERE --- */}
       {isAfk && (
